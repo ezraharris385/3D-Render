@@ -1,90 +1,83 @@
-# 3D Site Lab 🏗️
+# 3D Render — Two Dedicated Systems
 
-A **3D rendering lab for commercial sites**: define equipment with real-world dimensions (including diameters for tanks and silos), assemble the facility in a full 3D scene, wire up the utilities between equipment — then drop the whole site onto a **satellite map** to see exactly how it looks and lines up on the actual property.
+Two precision systems built separately, designed to combine later. Desktop-only, static files, no build step, **no API keys required** for anything that ships here.
 
-Desktop-first, static files only — no build step, no API keys, no server. Drop it on GitHub Pages or any display hub that allows outbound requests.
-
-| Design Lab | Site Map |
+| 🛰️ Atlas — Mapping System (`map/`) | 🏗️ Studio — Rendering Lab (`lab/`) |
 | --- | --- |
-| ![lab](docs/lab.png) | ![site map](docs/sitemap.png) |
+| ![Atlas](docs/atlas.png) | ![Studio](docs/studio.png) |
 
-## Two modes, one project
+---
 
-### 🔧 Design Lab (three.js)
+## 🛰️ Atlas — the mapping system
 
-- **Equipment with real dimensions** — vertical/horizontal cylinders and tanks (defined by **diameter**), silos with cone roofs, spheres on legs, and boxes for buildings, skids, containers, transformers, generators, and anything else. Everything is stored in meters and rendered at exactly that size.
-- **Build your library** — 12 built-in commercial templates, a form for custom types, or **upload a CSV spec sheet** (`name, shape, width, depth, height, diameter, length, color`) to load a whole equipment list at once.
-- **Direct manipulation** — click to place, drag on the ground to move (with grid snap), rotate with a slider or `Q`/`E`, nudge with arrow keys, `Ctrl+D` to duplicate.
-- **Utilities** — connect any two pieces of equipment with color-coded runs: **electric, water, gas, sewer, data, steam**, routed at ground level or overhead, with run lengths reported in your units.
-- **Real graphics** — soft shadows, sky, tone-mapped materials, orbit/pan/zoom camera, and a draggable 6 ft scale figure so sizes always read correctly.
+A serious 3D mapping platform (MapLibre GL v5):
 
-### 🛰️ Site Map (MapLibre + Esri satellite imagery)
+- **3D terrain** — real global elevation (AWS/Mapzen terrarium DEM) with adjustable exaggeration and hillshading.
+- **Satellite / aerial imagery** — Esri World Imagery, plus Hybrid (labels + roads), Streets, and Dark basemaps.
+- **Real 3D buildings** — OSM building massing with true heights, extruded from OpenFreeMap vector tiles, worldwide.
+- **Globe projection** toggle, smooth tilt/rotate camera, saved named views.
+- **Search** — autocomplete geocoding (Photon/komoot) or paste `lat, lng` directly.
+- **Measuring** — distance and area tools (imperial/metric: ft/mi, sq ft/acres).
+- **Bring your own data** — drag-and-drop GeoJSON. Polygons carrying `height` (meters) or `levels`/`stories` properties render instantly as 3D buildings; per-layer color, opacity, zoom-to, remove.
+- **Status bar** — live cursor coordinates, ground elevation, zoom, camera bearing/pitch. Right-click → copy coordinates, measure from here.
+- **PNG screenshots** with imagery credits and measurement labels baked in.
 
-- Search an address (or paste `lat, lng`), click **Place site**, and everything you built in the lab lands on the satellite photo **true to scale** — extruded to its real height, utilities drawn as colored lines.
-- Drag any piece to slide the whole site; rotate the site to line up with lot lines and existing structures.
-- Measuring tape for setbacks, tilt/top-down views, streets basemap, PNG screenshots with labels and imagery credits composited in.
+### What you can give me to make Atlas stronger
 
-Both modes share one project: **auto-saved** in the browser, **exportable as JSON** to share or back up.
+The system runs 100% key-free today. Each of these drops in cleanly and levels it up:
 
-## Run it
+| You provide | What it unlocks |
+| --- | --- |
+| **Building footprints GeoJSON** (county GIS, Microsoft/OSM footprint extracts, Regrid, etc.) | Already supported — drop the file on the map and footprints with heights render as 3D. This is the single best upgrade and it's free. |
+| **Parcel boundaries GeoJSON** | Lot lines over satellite — same drag-drop path. |
+| **Google Maps Platform key** (Map Tiles API) | **Photorealistic 3D Tiles** — actual photogrammetry meshes of most US metros. This is the visual endgame; it needs a Cesium/deck.gl layer added, which I'd build as an Atlas mode. |
+| **Cesium ion token** (free tier) | Cesium World Terrain (crisper than the public DEM) + worldwide OSM Buildings as clean 3D tiles. |
+| **MapTiler key** (free tier) | Sharper vector basemaps, contour lines, higher-zoom terrain. |
+| **Nearmap / EagleView / state orthophoto endpoint** | Recent, high-res aerials as a drop-in raster source (many state/county GIS servers are free WMS/XYZ). |
 
-Serve the folder over HTTP (ES modules don't load from `file://`):
+---
+
+## 🏗️ Studio — the rendering lab
+
+A black-space design studio where **nothing is left to guess**:
+
+- **True-dimension envelopes** — width/depth per building, story count × floor height, flat roof with parapet or gable with real pitch (rise:12) and ridge direction. Overall height reported in feet-inches.
+- **Real material textures at true pattern scale** — brick renders with modular courses at actual 8" × 2⅔" spacing; CMU at 16"×8"; concrete tilt-up with 15 ft panel reveals; metal panel with 12" ribs; curtainwall with 5 ft mullion grid; EIFS; 6" lap siding. Pattern size is exact because texture repeat is computed from wall meters.
+- **Openings are components** — windows and doors are first-class objects on each face: pick the **type** (fixed, double-hung, sliding, picture, storefront, ribbon, glass entry, man door, overhead door, dock door — each with real default sizes), then control **width, height, sill height, and position** to the inch. Walls get real holes; glass, frames, and mullions render per type. Click any window in 3D to select and edit it.
+- **Fast fenestration** — "Fill face evenly" arrays any type across a face; misfit/overlapping openings are flagged, never silently drawn wrong.
+- **Asset-type templates** — Office, Multifamily, Industrial, Data Center, Retail: one click generates a building with that asset class's construction defaults (materials, story heights, dock doors, storefront runs…). All of it stays editable.
+- **Dimension annotations** — toggleable 3D dimension lines with feet-inch labels, a draggable 6 ft scale figure, framed/front/top cameras, PNG screenshots.
+- **Projects** — auto-save, JSON export/import (foreign files are rejected, never wipe your work).
+
+### The data hook (your future materials database)
+
+Templates live in [`lab/js/templates.js`](lab/js/templates.js) as plain data-driven generators over one schema:
+
+```js
+{ name, assetType, plan: {w, d}, stories, floorH, parapet,
+  roof: {type, pitch, ridge}, material,
+  openings: [{face, type, u, sill, w, h}] }   // meters internally
+```
+
+When you're ready to feed in real data per asset class (expected story heights, window modules, dock spacing, material mixes), it slots into this schema — either as new template entries or as an imported JSON library. Send me the data in any tabular form and I'll wire an importer.
+
+---
+
+## Run / deploy
 
 ```bash
-python3 -m http.server 8000
-# open http://localhost:8000
+python3 -m http.server 8000   # ES modules need HTTP
+# hub:    http://localhost:8000/
+# atlas:  http://localhost:8000/map/
+# studio: http://localhost:8000/lab/
 ```
 
-### Deploy to GitHub Pages
+GitHub Pages: **Settings → Pages → Deploy from a branch** → `main` / root. The hub page links both systems.
 
-**Settings → Pages → Source: Deploy from a branch** → pick the branch and `/ (root)`. Done — it's a fully static site.
+## Verification
 
-## Keyboard shortcuts (lab)
+23 headless-browser checks across both systems: template generation with zero misfit openings, wall holes at exact `u ± w/2`, texture repeat exactly `1/pattern-size`, area math within 0.15% on a 100 m square, GeoJSON height extrusion, measure totals, basemap switching, import guards, round-trip persistence — plus multi-agent adversarial code review each round.
 
-| Key | Action |
-| --- | --- |
-| Arrow keys | Nudge selected item (Shift = 5×) |
-| `Q` / `E` | Rotate 15° (Shift = 1° fine) |
-| `Ctrl+D` | Duplicate selected |
-| `Delete` | Remove selected |
-| `Esc` | Cancel place/connect mode |
+## Attribution
 
-## CSV equipment import
-
-Columns (any order, case-insensitive): `name, shape, width, depth, height, diameter, length, color`. Dimensions are read in the **currently selected units**. Shapes: `box`, `cylinder` (vertical), `horizontal`, `silo`, `sphere`.
-
-```csv
-name,shape,width,depth,height,diameter,length,color
-30k gal Tank,cylinder,,,32,16,,#4da3ff
-LP Tank,horizontal,,,,6,16,#5ad7d2
-Control Skid,box,12,8,9,,,#e4b34a
-```
-
-## Accuracy notes
-
-- Site-to-map georeferencing uses the WGS84 geodetic meters-per-degree series at the site's latitude — verified against an independent ellipsoidal distance formula to within centimeters at site scale.
-- Map extrusion heights are true meters; lab and map use the same rotation convention (degrees clockwise from north), so nothing mirrors or skews between modes.
-- The ground is treated as flat in both modes.
-
-## Data & attribution
-
-| Service | Use | Terms |
-| --- | --- | --- |
-| [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite basemap | Free with attribution (shown on-map) |
-| [OpenStreetMap](https://www.openstreetmap.org/copyright) | Streets basemap | ODbL, attribution shown on-map |
-| [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) | Address search | Light interactive use only |
-| [three.js](https://threejs.org/) r160 | 3D lab renderer (CDN) | MIT |
-| [MapLibre GL JS](https://maplibre.org/) v4 | Map engine (CDN) | BSD-3-Clause |
-
-## Architecture
-
-Vanilla ES modules, no framework:
-
-```
-index.html      shell: top bar, two mode roots, importmap
-css/style.css   dark UI theme
-js/state.js     data model (meters), geodesy, persistence, CSV import
-js/lab.js       three.js scene: equipment meshes, utilities, picking
-js/map.js       MapLibre site view: extrusions, site anchor, measure
-js/main.js      mode switching, panels, project I/O, keyboard routing
-```
+Esri World Imagery · © OpenStreetMap contributors · © CARTO · OpenMapTiles/OpenFreeMap · Terrain: Mapzen/AWS, USGS, SRTM · Photon/komoot geocoding · MapLibre GL JS (BSD-3) · three.js (MIT)

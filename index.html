@@ -3,230 +3,63 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>3D Site Lab — Commercial Site Design Studio</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<link rel="stylesheet" href="css/style.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+<title>3D Render — Systems Hub</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #14181d; --line: #2a333d;
+    --text: #e8eef4; --muted: #93a3b3; --accent: #4da3ff;
   }
-}
-</script>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    background: radial-gradient(1200px 700px at 70% -10%, #16202c 0%, var(--bg) 55%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 40px;
+  }
+  main { max-width: 980px; width: 100%; }
+  h1 { font-size: 2rem; font-weight: 650; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 8px 0 34px; font-size: .95rem; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  a.card {
+    display: block; text-decoration: none; color: var(--text);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 26px 26px 22px;
+    transition: transform .15s, border-color .15s, box-shadow .15s;
+  }
+  a.card:hover {
+    transform: translateY(-3px);
+    border-color: var(--accent);
+    box-shadow: 0 14px 44px rgba(0,0,0,.45);
+  }
+  .card .icon { font-size: 2.2rem; }
+  .card h2 { margin: 12px 0 6px; font-size: 1.25rem; }
+  .card p { color: var(--muted); font-size: .86rem; line-height: 1.55; }
+  .card .go { display: inline-block; margin-top: 16px; color: var(--accent); font-size: .85rem; font-weight: 600; }
+  footer { margin-top: 30px; color: var(--muted); font-size: .74rem; }
+  @media (max-width: 760px) { .cards { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body>
-
-<div id="topbar">
-  <div id="brand">🏗️ 3D Site Lab<small>life-sized equipment · utilities · satellite siting</small></div>
-  <div id="tabs">
-    <button id="tabLab" class="active">🔧 Design Lab</button>
-    <button id="tabMap">🛰️ Site Map</button>
+<main>
+  <h1>3D Render</h1>
+  <p class="sub">Two dedicated systems, built to combine: a precision mapping platform and a true-dimension rendering lab.</p>
+  <div class="cards">
+    <a class="card" href="map/">
+      <div class="icon">🛰️</div>
+      <h2>Atlas — Mapping System</h2>
+      <p>3D terrain, satellite &amp; aerial imagery, real OSM building massing, globe view, measuring, and drag-and-drop GeoJSON — bring your own building footprints and they render in 3D.</p>
+      <span class="go">Open Atlas →</span>
+    </a>
+    <a class="card" href="lab/">
+      <div class="icon">🏗️</div>
+      <h2>Studio — Rendering Lab</h2>
+      <p>Design buildings with nothing left to guess: real material textures at true pattern scale, windows and doors as controllable components, and asset-type templates for office, retail, industrial, multifamily, and data centers.</p>
+      <span class="go">Open Studio →</span>
+    </a>
   </div>
-  <div class="spacer"></div>
-  <div class="seg" style="width:130px">
-    <button id="unitFt" class="active">Feet</button>
-    <button id="unitM">Meters</button>
-  </div>
-  <button id="exportBtn">Export</button>
-  <button id="importBtn">Import</button>
-  <input type="file" id="importFile" accept=".json,application/json" style="display:none">
-</div>
-
-<!-- ================= LAB MODE ================= -->
-<div id="labRoot" class="mode-root">
-  <aside class="sidebar">
-    <div class="section">
-      <h2>Equipment library</h2>
-      <div id="catalogList"></div>
-      <p class="hint">Click a type, then click the ground to place it. Built-ins are starting points — every placed item's dimensions stay fully editable.</p>
-    </div>
-
-    <div class="section">
-      <h2>New equipment type</h2>
-      <div class="card">
-        <div class="row">
-          <input type="text" id="neName" class="grow" placeholder="Name (e.g. 500 gal LP tank)">
-          <input type="color" id="neColor" value="#4da3ff">
-        </div>
-        <div class="row">
-          <select id="neShape" class="grow">
-            <option value="box">Box / Building</option>
-            <option value="cyl-v" selected>Vertical cylinder / tank</option>
-            <option value="cyl-h">Horizontal cylinder / tank</option>
-            <option value="silo">Silo (cone roof)</option>
-            <option value="sphere">Sphere</option>
-          </select>
-        </div>
-        <div class="dims-grid" id="neDims"></div>
-        <div class="row">
-          <button id="neAddBtn" class="primary grow">Add to library</button>
-          <button id="csvBtn" title="CSV columns: name, shape, width, depth, height, diameter, length, color — dimensions in current units">Upload CSV</button>
-          <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none">
-        </div>
-        <p class="hint">Upload a CSV spec sheet with columns <code>name, shape, width, depth, height, diameter, length, color</code> (dimensions in the current units) to load a whole equipment list at once.</p>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Placed equipment</h2>
-      <div id="itemList"></div>
-    </div>
-
-    <div class="section" id="selectedSection" style="display:none">
-      <h2>Selected</h2>
-      <div class="card">
-        <div class="row">
-          <input type="text" id="selName" class="grow">
-          <input type="color" id="selColor">
-        </div>
-        <div class="dims-grid" id="selDims"></div>
-        <div class="row">
-          <div class="grow">
-            <label class="small">Rotation — <span id="selRotVal">0</span>°</label>
-            <input type="range" id="selRot" min="0" max="359" step="1" value="0">
-          </div>
-        </div>
-        <div class="row">
-          <button id="selDupBtn" class="grow">Duplicate</button>
-          <button id="selDelBtn" class="danger">Delete</button>
-        </div>
-        <p class="hint">Drag on the ground to move · arrows nudge (Shift = 5×) · Q/E rotate 15° (Shift = 1°) · Ctrl+D duplicate · Delete removes.</p>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Utilities</h2>
-      <div class="card">
-        <div class="row">
-          <select id="utilType" class="grow">
-            <option value="electric">Electric</option>
-            <option value="water">Water</option>
-            <option value="gas">Gas</option>
-            <option value="sewer">Sewer</option>
-            <option value="data">Data</option>
-            <option value="steam">Steam</option>
-          </select>
-          <select id="utilRoute">
-            <option value="ground">Ground</option>
-            <option value="overhead">Overhead</option>
-          </select>
-          <button id="connectBtn" class="primary">Connect</button>
-        </div>
-        <div id="utilList" style="margin-top:8px"></div>
-        <div class="util-legend" id="utilLegend"></div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>View</h2>
-      <div class="card">
-        <div class="row">
-          <button id="viewIsoBtn" class="grow">Iso view</button>
-          <button id="viewTopBtn" class="grow">Top-down</button>
-          <button id="labShotBtn" class="grow">📷 Shot</button>
-        </div>
-        <div class="row">
-          <button id="snapBtn" class="grow active">Grid snap</button>
-          <button id="humanBtn" class="grow active">🧍 Scale figure</button>
-          <button id="clearBtn" class="danger grow">Clear site</button>
-        </div>
-        <p class="hint">Orbit: drag · Pan: right-drag · Zoom: scroll. The figure is 6 ft tall — drag it around for scale.</p>
-      </div>
-    </div>
-  </aside>
-
-  <div id="labCanvasHolder" class="canvas-holder"></div>
-
-  <div class="banner-holder">
-    <div class="pill mode" id="labBanner" style="display:none"></div>
-  </div>
-</div>
-
-<!-- ================= MAP MODE ================= -->
-<div id="mapRoot" class="mode-root" style="display:none">
-  <aside class="sidebar">
-    <div class="section">
-      <h2>Find the site</h2>
-      <div class="row">
-        <input type="text" id="mapSearchBox" class="grow" placeholder="Address, city, or lat, lng…">
-        <button id="mapSearchBtn">Go</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Site placement</h2>
-      <div class="card">
-        <p class="hint" id="siteStatus" style="margin:0 0 8px"></p>
-        <div class="row">
-          <button id="placeSiteBtn" class="primary grow">📍 Place site</button>
-          <button id="zoomSiteBtn" class="grow">Zoom to site</button>
-        </div>
-        <div class="row" id="siteRotRow" style="display:none">
-          <div class="grow">
-            <label class="small">Site rotation — <span id="siteRotVal">0</span>°</label>
-            <input type="range" id="siteRot" min="0" max="359" step="1" value="0">
-          </div>
-        </div>
-        <p class="hint">Everything you built in the lab lands here, true to scale. Drag any piece to slide the whole site; rotate to line up with the property.</p>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Display</h2>
-      <div class="card">
-        <div class="row">
-          <div class="grow">
-            <label class="small">Basemap</label>
-            <div class="seg">
-              <button id="mapBaseSat" class="active">Satellite</button>
-              <button id="mapBaseStreet">Streets</button>
-            </div>
-          </div>
-        </div>
-        <div class="row">
-          <button id="mapTiltBtn" class="grow">Tilt 3D</button>
-          <button id="mapTopBtn" class="grow">Top-down</button>
-          <button id="mapLabelsBtn" class="grow active">Labels</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>Tools</h2>
-      <div class="card">
-        <div class="row">
-          <button id="mapMeasureBtn" class="grow">📏 Measure</button>
-          <button id="mapShotBtn" class="grow">📷 Screenshot</button>
-        </div>
-        <p class="hint">Layouts auto-save in this browser. Use Export (top bar) to share the whole project.</p>
-      </div>
-    </div>
-  </aside>
-
-  <div id="map"></div>
-
-  <div class="banner-holder">
-    <div class="pill mode" id="mapBanner" style="display:none"></div>
-    <div class="pill" id="mapMeasureReadout" style="display:none"></div>
-  </div>
-</div>
-
-<div id="toast"></div>
-
-<script type="module" src="js/main.js"></script>
-<script type="module">
-  // utility color legend
-  import { UTILITY_TYPES } from "./js/state.js";
-  const legend = document.getElementById("utilLegend");
-  for (const [, t] of Object.entries(UTILITY_TYPES)) {
-    const chip = document.createElement("span");
-    chip.className = "util-chip";
-    chip.innerHTML = `<i></i>${t.label}`;
-    chip.querySelector("i").style.background = t.color;
-    legend.appendChild(chip);
-  }
-</script>
+  <footer>Static files only — no build step, no API keys. Runs anywhere you can host a folder.</footer>
+</main>
 </body>
 </html>
