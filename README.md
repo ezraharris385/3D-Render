@@ -1,62 +1,70 @@
-# 3D Real Estate Studio 🏘️
+# 3D Site Lab 🏗️
 
-Create **life-sized 3D models of real estate** and place them on a **satellite map** to see exactly how they'd look and line up on a real site.
+A **3D rendering lab for commercial sites**: define equipment with real-world dimensions (including diameters for tanks and silos), assemble the facility in a full 3D scene, wire up the utilities between equipment — then drop the whole site onto a **satellite map** to see exactly how it looks and lines up on the actual property.
 
-Everything runs in a single `index.html` — no build step, no API keys, no server-side code. Perfect for dropping into a display hub, GitHub Pages, or any static host.
+Desktop-first, static files only — no build step, no API keys, no server. Drop it on GitHub Pages or any display hub that allows outbound requests.
 
-![screenshot](docs/screenshot.png)
+| Design Lab | Site Map |
+| --- | --- |
+| ![lab](docs/lab.png) | ![site map](docs/sitemap.png) |
 
-## What it does
+## Two modes, one project
 
-- **True-to-scale buildings** — enter width × depth × height in **feet or meters** and the model renders at exactly that size on the map (heights are real meters in the 3D engine; footprints are computed from geodetic meters-per-degree at the site's latitude).
-- **Satellite basemap** — free Esri World Imagery, with an OpenStreetMap streets basemap as an alternate and an optional place-labels overlay.
-- **Full 3D view** — tilt, rotate, and orbit the camera around your massing models; one-click top-down view for lining footprints up with lot lines.
-- **Direct manipulation** — drag buildings on the map, rotate with a slider or `Q`/`E`, nudge foot-by-foot with arrow keys.
-- **Measuring tape** — click points on the map to measure distances (setbacks, lot widths) in your chosen units.
-- **Address search** — jump to any address via OpenStreetMap's Nominatim geocoder, or paste `lat, lng` coordinates directly.
-- **Persistence** — layouts auto-save to the browser (localStorage), and you can export/import site plans as JSON to share them.
-- **Screenshots** — one-click PNG export of the current view for listings, decks, or your display hub.
+### 🔧 Design Lab (three.js)
+
+- **Equipment with real dimensions** — vertical/horizontal cylinders and tanks (defined by **diameter**), silos with cone roofs, spheres on legs, and boxes for buildings, skids, containers, transformers, generators, and anything else. Everything is stored in meters and rendered at exactly that size.
+- **Build your library** — 12 built-in commercial templates, a form for custom types, or **upload a CSV spec sheet** (`name, shape, width, depth, height, diameter, length, color`) to load a whole equipment list at once.
+- **Direct manipulation** — click to place, drag on the ground to move (with grid snap), rotate with a slider or `Q`/`E`, nudge with arrow keys, `Ctrl+D` to duplicate.
+- **Utilities** — connect any two pieces of equipment with color-coded runs: **electric, water, gas, sewer, data, steam**, routed at ground level or overhead, with run lengths reported in your units.
+- **Real graphics** — soft shadows, sky, tone-mapped materials, orbit/pan/zoom camera, and a draggable 6 ft scale figure so sizes always read correctly.
+
+### 🛰️ Site Map (MapLibre + Esri satellite imagery)
+
+- Search an address (or paste `lat, lng`), click **Place site**, and everything you built in the lab lands on the satellite photo **true to scale** — extruded to its real height, utilities drawn as colored lines.
+- Drag any piece to slide the whole site; rotate the site to line up with lot lines and existing structures.
+- Measuring tape for setbacks, tilt/top-down views, streets basemap, PNG screenshots with labels and imagery credits composited in.
+
+Both modes share one project: **auto-saved** in the browser, **exportable as JSON** to share or back up.
 
 ## Run it
 
-Open `index.html` in a browser. That's it.
-
-If your browser restricts `file://` pages, serve it locally:
+Serve the folder over HTTP (ES modules don't load from `file://`):
 
 ```bash
 python3 -m http.server 8000
-# then open http://localhost:8000
+# open http://localhost:8000
 ```
 
 ### Deploy to GitHub Pages
 
-1. Push this repo to GitHub.
-2. **Settings → Pages → Source: Deploy from a branch**, pick your branch and `/ (root)`.
-3. Your studio is live at `https://<user>.github.io/<repo>/`.
+**Settings → Pages → Source: Deploy from a branch** → pick the branch and `/ (root)`. Done — it's a fully static site.
 
-## Using the studio
-
-1. **Find your site** — search an address (or `lat, lng`) in the top-left box.
-2. **Place a building** — click **＋ New building**, then click the map. A default 40×30×22 ft house drops in.
-3. **Size it for real** — with the building selected, type its true width/depth/height. `1 story ≈ 10 ft`.
-4. **Line it up** — drag it into place over the satellite photo; rotate it to match the street or lot lines; use **📏 Measure** to check setbacks.
-5. **Show it off** — tilt into 3D, take a **📷 Screenshot**, or **Export JSON** to share the plan.
-
-### Keyboard shortcuts
+## Keyboard shortcuts (lab)
 
 | Key | Action |
 | --- | --- |
-| Arrow keys | Nudge selected building 1 ft (Shift = 5 ft) |
-| `Q` / `E` | Rotate 1° counter-/clockwise (Shift = 15°) |
-| `Delete` | Remove selected building |
-| `Esc` | Cancel placement / measuring |
+| Arrow keys | Nudge selected item (Shift = 5×) |
+| `Q` / `E` | Rotate 15° (Shift = 1° fine) |
+| `Ctrl+D` | Duplicate selected |
+| `Delete` | Remove selected |
+| `Esc` | Cancel place/connect mode |
+
+## CSV equipment import
+
+Columns (any order, case-insensitive): `name, shape, width, depth, height, diameter, length, color`. Dimensions are read in the **currently selected units**. Shapes: `box`, `cylinder` (vertical), `horizontal`, `silo`, `sphere`.
+
+```csv
+name,shape,width,depth,height,diameter,length,color
+30k gal Tank,cylinder,,,32,16,,#4da3ff
+LP Tank,horizontal,,,,6,16,#5ad7d2
+Control Skid,box,12,8,9,,,#e4b34a
+```
 
 ## Accuracy notes
 
-- Footprint geometry uses the standard geodetic meters-per-degree series at the building's latitude, so dimensions are accurate to well under 1% at building scale, anywhere on Earth.
-- Extrusion heights are true meters (MapLibre's `fill-extrusion-height` is defined in meters).
-- The ground is treated as flat — on steep sites the base of the model follows the map plane, not the terrain.
-- Buildings are flat-roofed massing volumes (the standard for zoning/fit studies). Gabled roofs are a possible future addition.
+- Site-to-map georeferencing uses the WGS84 geodetic meters-per-degree series at the site's latitude — verified against an independent ellipsoidal distance formula to within centimeters at site scale.
+- Map extrusion heights are true meters; lab and map use the same rotation convention (degrees clockwise from north), so nothing mirrors or skews between modes.
+- The ground is treated as flat in both modes.
 
 ## Data & attribution
 
@@ -64,9 +72,19 @@ python3 -m http.server 8000
 | --- | --- | --- |
 | [Esri World Imagery](https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9) | Satellite basemap | Free with attribution (shown on-map) |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) | Streets basemap | ODbL, attribution shown on-map |
-| [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) | Address search | Light interactive use only — no bulk geocoding |
-| [MapLibre GL JS](https://maplibre.org/) | Map engine (CDN) | BSD-3-Clause |
+| [Nominatim](https://operations.osmfoundation.org/policies/nominatim/) | Address search | Light interactive use only |
+| [three.js](https://threejs.org/) r160 | 3D lab renderer (CDN) | MIT |
+| [MapLibre GL JS](https://maplibre.org/) v4 | Map engine (CDN) | BSD-3-Clause |
 
-## Tech
+## Architecture
 
-Single-file vanilla JS + [MapLibre GL JS](https://maplibre.org/) v4. Buildings live in a GeoJSON source rendered with a `fill-extrusion` layer; all state is plain JSON (meters internally, converted at the UI edge).
+Vanilla ES modules, no framework:
+
+```
+index.html      shell: top bar, two mode roots, importmap
+css/style.css   dark UI theme
+js/state.js     data model (meters), geodesy, persistence, CSV import
+js/lab.js       three.js scene: equipment meshes, utilities, picking
+js/map.js       MapLibre site view: extrusions, site anchor, measure
+js/main.js      mode switching, panels, project I/O, keyboard routing
+```
