@@ -12,13 +12,13 @@
 #tabs button + button { border-left: 1px solid var(--line); }
 #topbar .spacer { flex: 1; }
 .mode-root { position: absolute; top: var(--topbar-h); left: 0; right: 0; bottom: 0; }
-#canvasHolder { position: absolute; inset: 0 0 0 var(--sidebar-w); }
-#canvasHolder canvas { display: block; width: 100%; height: 100%; }
+#canvasHolder, #interiorCanvasHolder { position: absolute; inset: 0 0 0 var(--sidebar-w); }
+#canvasHolder canvas, #interiorCanvasHolder canvas { display: block; width: 100%; height: 100%; }
 #earthContainer { position: absolute; inset: 0 0 0 var(--sidebar-w); }
 #earthContainer .cesium-viewer, #earthContainer .cesium-widget, #earthContainer canvas { width: 100%; height: 100%; }
-#labRoot { --sidebar-w: 360px; }
+#labRoot, #interiorRoot { --sidebar-w: 360px; }
 #mapRoot { --sidebar-w: 330px; }
-.mode-root .sidebar, .mode-root #sidebarStudio, .mode-root #sidebarAtlas, .mode-root #sidebarEarth {
+.mode-root .sidebar, .mode-root #sidebarStudio, .mode-root #sidebarAtlas, .mode-root #sidebarEarth, .mode-root #sidebarInterior {
   position: absolute; top: 0; left: 0; bottom: 0; width: var(--sidebar-w);
   background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; z-index: 10;
@@ -50,9 +50,9 @@ body {
   background: var(--panel); border-right: 1px solid var(--line);
   display: flex; flex-direction: column; z-index: 10;
 }
-#sidebarAtlas header, #sidebarEarth header { padding: 13px 16px 10px; border-bottom: 1px solid var(--line); position: relative; }
-#sidebarAtlas header h1, #sidebarEarth header h1 { font-size: 1.05rem; font-weight: 650; }
-#sidebarAtlas header p, #sidebarEarth header p { font-size: .74rem; color: var(--muted); }
+#sidebarAtlas header, #sidebarEarth header, #sidebarInterior header { padding: 13px 16px 10px; border-bottom: 1px solid var(--line); position: relative; }
+#sidebarAtlas header h1, #sidebarEarth header h1, #sidebarInterior header h1 { font-size: 1.05rem; font-weight: 650; }
+#sidebarAtlas header p, #sidebarEarth header p, #sidebarInterior header p { font-size: .74rem; color: var(--muted); }
 #sidebarAtlas header .back {
   position: absolute; top: 14px; right: 14px;
   color: var(--muted); font-size: .74rem; text-decoration: none;
@@ -227,7 +227,7 @@ button.wide { width: 100%; }
 #templateGrid button { display: flex; align-items: center; gap: 8px; padding: 9px 10px; }
 #templateGrid .t-icon { font-size: 1.15rem; }
 
-#buildingList, #openingList { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+#buildingList, #openingList, #inList { display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
 .b-item {
   display: flex; align-items: center; gap: 8px;
   background: var(--panel-2); border: 1px solid var(--line);
@@ -240,6 +240,14 @@ button.wide { width: 100%; }
 .b-dims { font-size: .68rem; color: var(--muted); white-space: nowrap; }
 .b-del { background: none; border: none; color: var(--muted); padding: 2px 5px; }
 .b-del:hover { color: var(--danger); background: none; }
+.b-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .empty-note { font-size: .78rem; color: var(--muted); padding: 4px 2px; }
+
+/* armed placement modes read as "hot", distinct from primary blue */
+#inPlaceBtn.active, #inWallBtn.active { background: #ffd166; border-color: #ffd166; color: #231a00; }
+
+/* catalog manage list (collapsible per-row delete) */
+#catList details summary { cursor: pointer; font-size: .78rem; color: var(--muted); padding: 4px 2px; }
+#catList .cat-rows { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; margin-top: 6px; }
 
 

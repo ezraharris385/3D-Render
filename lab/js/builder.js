@@ -304,11 +304,21 @@ function buildInterior(b, group) {
 }
 
 /* ---------------- top-level ---------------- */
-export function buildBuilding(b) {
+export function buildBuilding(b, { withInterior = true } = {}) {
   const group = new THREE.Group();
   for (const face of FACES) buildFace(b, face, group);
   buildRoof(b, group);
   buildSlabs(b, group);
+  if (withInterior) buildInterior(b, group);
+  group.position.set(b.x, 0, b.z);
+  group.rotation.y = -b.rot * Math.PI / 180;
+  group.userData = { buildingId: b.id };
+  return group;
+}
+
+/* interior-only group, positioned like the building (Interior tab) */
+export function buildInteriorOnly(b) {
+  const group = new THREE.Group();
   buildInterior(b, group);
   group.position.set(b.x, 0, b.z);
   group.rotation.y = -b.rot * Math.PI / 180;
