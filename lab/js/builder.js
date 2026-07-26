@@ -266,12 +266,50 @@ export function buildDims(b) {
   return g;
 }
 
+/* ---------------- interior infrastructure ---------------- */
+const partitionMat = new THREE.MeshStandardMaterial({ color: 0xd7dde3, roughness: 0.9 });
+function buildInterior(b, group) {
+  for (const it of (b.interior || [])) {
+    const base = (it.floor - 1) * b.floorH + 0.13; // sit on the slab
+    if (it.kind === "wall") {
+      const len = Math.hypot(it.x2 - it.x1, it.z2 - it.z1);
+      if (len < 0.05) continue;
+      const h = Math.max(0.5, b.floorH - 0.4);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(len, h, it.t), partitionMat);
+      m.position.set((it.x1 + it.x2) / 2, base + h / 2, (it.z1 + it.z2) / 2);
+      m.rotation.y = -Math.atan2(it.z2 - it.z1, it.x2 - it.x1);
+      m.castShadow = m.receiveShadow = true;
+      m.userData = { buildingId: b.id, interiorId: it.id };
+      group.add(m);
+    } else {
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(it.color), roughness: 0.6, metalness: 0.3,
+      });
+      const m = new THREE.Mesh(new THREE.BoxGeometry(it.w, it.h, it.d), mat);
+      m.position.set(it.x, base + it.h / 2, it.z);
+      m.rotation.y = -it.rot * Math.PI / 180;
+      m.castShadow = m.receiveShadow = true;
+      m.userData = { buildingId: b.id, interiorId: it.id };
+      group.add(m);
+      // subtle top cap line so dense rows read individually
+      const cap = new THREE.Mesh(
+        new THREE.BoxGeometry(it.w * 0.96, 0.02, it.d * 0.96),
+        new THREE.MeshBasicMaterial({ color: 0x0c0f13 })
+      );
+      cap.position.set(0, it.h / 2 + 0.011, 0);
+      cap.userData = m.userData;
+      m.add(cap);
+    }
+  }
+}
+
 /* ---------------- top-level ---------------- */
 export function buildBuilding(b) {
   const group = new THREE.Group();
   for (const face of FACES) buildFace(b, face, group);
   buildRoof(b, group);
   buildSlabs(b, group);
+  buildInterior(b, group);
   group.position.set(b.x, 0, b.z);
   group.rotation.y = -b.rot * Math.PI / 180;
   group.userData = { buildingId: b.id };
@@ -286,7 +324,7 @@ export function disposeGroup(g) {
       for (const m of mats) {
         // shared cached materials must not be disposed; clones own their maps
         if (m === revealMat || m === glassMat || m === frameMat || m === doorMat ||
-            m === slabMat || m === roofMat || m === dimLineMat) continue;
+            m === slabMat || m === roofMat || m === dimLineMat || m === partitionMat) continue;
         if (m.map && m.map.image && m !== doorPanelMaterial().mat) m.map.dispose();
         if (m !== doorPanelMaterial().mat) m.dispose();
       }

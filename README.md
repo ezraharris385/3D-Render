@@ -4,7 +4,7 @@
 
 ## The workflow
 
-1. **Studio tab** — build from an asset template (office, multifamily, industrial, data center, retail) or from scratch; control every dimension, material, window, and door.
+1. **Studio tab** — one building per project. Start from an asset template (office, multifamily, industrial, data center, retail) or one of your own uploaded presets; control every dimension, material, window, and door — and the **interior infrastructure**: place equipment and draw partition walls floor by floor, then slice the building open to work inside it.
 2. **💾 Save** — projects go to a library shared by both tabs (and auto-persist in the browser).
 3. **📍 Send to Atlas map** — the engine switches tabs and arms placement; click the map and your project lands as true-scale 3D massing (footprints, heights, material colors). Drag to move it, rotate it to sit the lot, place as many saved projects as you like — each placement is independent and persistent.
 4. Atlas keeps **all of its own features** around your placements: 3D terrain, OSM buildings, measuring, GeoJSON imports, saved views.
@@ -55,20 +55,26 @@ A black-space design studio where **nothing is left to guess**:
 - **Openings are components** — windows and doors are first-class objects on each face: pick the **type** (fixed, double-hung, sliding, picture, storefront, ribbon, glass entry, man door, overhead door, dock door — each with real default sizes), then control **width, height, sill height, and position** to the inch. Walls get real holes; glass, frames, and mullions render per type. Click any window in 3D to select and edit it.
 - **Fast fenestration** — "Fill face evenly" arrays any type across a face; misfit/overlapping openings are flagged, never silently drawn wrong.
 - **Asset-type templates** — Office, Multifamily, Industrial, Data Center, Retail: one click generates a building with that asset class's construction defaults (materials, story heights, dock doors, storefront runs…). All of it stays editable.
+- **Interior infrastructure** — pick a floor, place equipment with real dimensions (server racks, CRAC/CRAH, UPS, PDUs, switchgear, panels, pallet racking, machines — plus anything you upload), draw partition walls with two clicks, and hit **👁 Inside** to slice the building open above the active floor (doll-house view). Click any interior item in 3D to select it; drag, rotate, resize, delete. The Data Center template ships with a full rack/CRAC/electrical-room layout.
 - **Dimension annotations** — toggleable 3D dimension lines with feet-inch labels, a draggable 6 ft scale figure, framed/front/top cameras, PNG screenshots.
-- **Projects** — auto-save, JSON export/import (foreign files are rejected, never wipe your work).
+- **Projects** — one building per project; auto-save, JSON export/import (foreign files are rejected, never wipe your work).
 
-### The data hook (your future materials database)
+### Your data — the catalog the system adapts to
 
-Templates live in [`lab/js/templates.js`](lab/js/templates.js) as plain data-driven generators over one schema:
+Studio has a **catalog upload** (CSV or exported JSON) that feeds every picker. One file, three kinds of rows:
 
-```js
-{ name, assetType, plan: {w, d}, stories, floorH, parapet,
-  roof: {type, pitch, ridge}, material,
-  openings: [{face, type, u, sill, w, h}] }   // meters internally
+```csv
+kind,name,brand,type,width,depth,height,sill,color,stories,floorheight,parapet,material
+equipment,Chiller X90,Trane,chiller,8,4,6,,#5ad7d2,,,,
+opening,ProLine 4x6,Pella,double-hung,4,,6,2.5,#ffffff,,,,
+preset,Flex Warehouse 40k,,industrial,400,100,,,,1,28,3,metal
 ```
 
-When you're ready to feed in real data per asset class (expected story heights, window modules, dock spacing, material mixes), it slots into this schema — either as new template entries or as an imported JSON library. Send me the data in any tabular form and I'll wire an importer.
+- `equipment` rows join the **interior palette** (place them on any floor).
+- `opening` rows join the **windows & doors picker** as products with real sizes (`type` maps to a base type: window, double-hung, sliding, storefront, door, overhead, dock…).
+- `preset` rows join the **building templates** grid.
+
+Dimensions are read in the current units; entries persist in the browser and export/import as JSON.
 
 ---
 
