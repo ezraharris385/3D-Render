@@ -4,10 +4,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
-  state, FT, MATERIALS, OPENING_TYPES, FACES, FACE_LABELS,
-  selectedBuilding, buildingById, openingById, makeBuilding, addOpening,
-  removeBuilding, arrayOpenings, faceLength, wallHeight, totalHeight,
-  fittedOpenings, openingFits,
+  state, FT, MATERIALS, OPENING_TYPES, FACES, FACE_LABELS, INTERIOR_TYPES,
+  selectedBuilding, buildingById, openingById, makeBuilding, addOpening, addInterior,
+  removeBuilding, arrayOpenings, faceLength, wallHeight, totalHeight, floorBase,
+  fittedOpenings, openingFits, interiorOnFloor,
   toUI, fromUI, unitSuffix, fmtLen,
   exportProject, loadProject, loadSaved, save, flushSave,
 } from "./state.js";
@@ -29,6 +29,23 @@ let pointer = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let dragging = null;
 let editFace = "s";
+/* interior state */
+let activeFloor = 1;
+let insideView = false;
+let intMode = "idle";            // 'idle' | 'place' | 'wall'
+let intPlaceSpec = null;         // template for the item being placed
+let wallFirst = null;            // first click of a partition wall (local coords)
+let selectedInterior = null;     // interior id | null
+
+/* building-local <-> world (building may be moved/rotated) */
+function toLocal(b, wx, wz) {
+  const th = b.rot * Math.PI / 180;
+  const dx = wx - b.x, dz = wz - b.z;
+  return { x: dx * Math.cos(th) + dz * Math.sin(th), z: -dx * Math.sin(th) + dz * Math.cos(th) };
+}
+function interiorById(b, id) {
+  return b ? (b.interior || []).find(i => i.id === id) || null : null;
+}
 
 /* ---------------- scene ---------------- */
 function initScene() {
@@ -160,6 +177,13 @@ function refreshHelpers() {
       openingBox = new THREE.BoxHelper(target, 0xffd166);
       scene.add(openingBox);
     }
+  } else if (selectedInterior && g) {
+    let target = null;
+    g.traverse(o => { if (o.userData && o.userData.interiorId === selectedInterior && !target) target = o; });
+    if (target) {
+      openingBox = new THREE.BoxHelper(target, 0xffd166);
+      scene.add(openingBox);
+    }
   }
 }
 
@@ -202,25 +226,99 @@ function findOpeningId(obj) {
   }
   return null;
 }
+function findInteriorId(obj) {
+  let o = obj;
+  while (o) {
+    if (o.userData && o.userData.interiorId) return o.userData.interiorId;
+    o = o.parent;
+  }
+  return null;
+}
+function floorPlaneHit(b) {
+  const y = floorBase(b, activeFloor) + 0.13;
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -y);
+  const p = new THREE.Vector3();
+  return raycaster.ray.intersectPlane(plane, p) ? p : null;
+}
+function applyClip() {
+  const b = selectedBuilding() || state.buildings[0];
+  if (insideView && b) {
+    const cutY = floorBase(b, activeFloor) + b.floorH * 0.9;
+    renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), cutY)];
+  } else {
+    renderer.clippingPlanes = [];
+  }
+}
 
 function onPointerDown(e) {
   if (e.button !== 0 || dragging) return;
   setPointer(e);
+
+  // interior placement / wall drawing on the active floor
+  const bSel = selectedBuilding() || state.buildings[0];
+  if (intMode !== "idle" && bSel) {
+    const p = floorPlaneHit(bSel);
+    if (!p) return;
+    const l = toLocal(bSel, p.x, p.z);
+    const snap = state.units === "ft" ? FT / 2 : 0.25;
+    l.x = Math.round(l.x / snap) * snap;
+    l.z = Math.round(l.z / snap) * snap;
+    if (intMode === "place" && intPlaceSpec) {
+      const it = addInterior(bSel, { ...intPlaceSpec, kind: "item", floor: activeFloor, x: l.x, z: l.z });
+      selectedInterior = it.id;
+      setIntMode("idle");
+      changed(bSel.id);
+    } else if (intMode === "wall") {
+      if (!wallFirst) {
+        wallFirst = l;
+        toast("First corner set — click the wall's end point");
+      } else {
+        const it = addInterior(bSel, { kind: "wall", floor: activeFloor, name: "Partition",
+          x1: wallFirst.x, z1: wallFirst.z, x2: l.x, z2: l.z });
+        selectedInterior = it.id;
+        setIntMode("idle");
+        changed(bSel.id);
+      }
+    }
+    return;
+  }
+
   const hit = pick();
   if (hit) {
     state.selectedId = hit.buildingId;
     state.selectedOpening = hit.openingId ? { bId: hit.buildingId, oId: hit.openingId } : null;
+    selectedInterior = hit.interiorId || null;
     if (hit.openingId) {
       const b = buildingById(hit.buildingId);
       const o = openingById(b, hit.openingId);
       if (o) editFace = o.face;
     }
     const b = buildingById(hit.buildingId);
-    const p = groundHit();
-    if (p && !hit.openingId) {
-      dragging = { id: b.id, pointerId: e.pointerId, offX: b.x - p.x, offZ: b.z - p.z, moved: false };
-      try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-      controls.enabled = false;
+    if (hit.interiorId) {
+      const it = interiorById(b, hit.interiorId);
+      if (it && it.kind === "item") {
+        activeFloor = it.floor;
+        const planeY = floorBase(b, it.floor) + 0.13;
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+        const p = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(plane, p)) {
+          const l = toLocal(b, p.x, p.z);
+          let meshRef = null;
+          const g = buildingGroups.get(b.id);
+          g?.traverse(o => { if (!meshRef && o.userData?.interiorId === it.id && o.geometry?.type === "BoxGeometry" && o.parent === g) meshRef = o; });
+          dragging = { interiorId: it.id, bId: b.id, pointerId: e.pointerId,
+            offX: it.x - l.x, offZ: it.z - l.z, planeY, meshRef, moved: false };
+          try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+          controls.enabled = false;
+        }
+      }
+    } else if (!hit.openingId) {
+      const p = groundHit();
+      if (p) {
+        dragging = { id: b.id, pointerId: e.pointerId, offX: b.x - p.x, offZ: b.z - p.z, moved: false };
+        try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+        controls.enabled = false;
+      }
     }
     renderPanels();
     refreshHelpers();
@@ -230,9 +328,10 @@ function onPointerDown(e) {
       dragging = { humanDrag: true, pointerId: e.pointerId };
       try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
       controls.enabled = false;
-    } else if (state.selectedId !== null || state.selectedOpening) {
+    } else if (state.selectedId !== null || state.selectedOpening || selectedInterior) {
       state.selectedId = null;
       state.selectedOpening = null;
+      selectedInterior = null;
       renderPanels();
       refreshHelpers();
     }
@@ -241,9 +340,29 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!dragging || e.pointerId !== dragging.pointerId) return;
   setPointer(e);
+  if (dragging.humanDrag) {
+    const p = groundHit();
+    if (p) human.position.set(p.x, 0, p.z);
+    return;
+  }
+  if (dragging.interiorId) {
+    const b = buildingById(dragging.bId);
+    const it = interiorById(b, dragging.interiorId);
+    if (!b || !it) { dragging = null; controls.enabled = true; return; }
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -dragging.planeY);
+    const p = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(plane, p)) return;
+    const l = toLocal(b, p.x, p.z);
+    const snap = state.units === "ft" ? FT / 4 : 0.1;
+    it.x = Math.round((l.x + dragging.offX) / snap) * snap;
+    it.z = Math.round((l.z + dragging.offZ) / snap) * snap;
+    dragging.moved = true;
+    if (dragging.meshRef) dragging.meshRef.position.set(it.x, floorBase(b, it.floor) + 0.13 + it.h / 2, it.z);
+    if (openingBox) openingBox.update();
+    return;
+  }
   const p = groundHit();
   if (!p) return;
-  if (dragging.humanDrag) { human.position.set(p.x, 0, p.z); return; }
   const b = buildingById(dragging.id);
   if (!b) { dragging = null; controls.enabled = true; return; }
   const snap = state.units === "ft" ? FT : 0.5;
@@ -256,7 +375,10 @@ function onPointerMove(e) {
 }
 function onPointerUp(e) {
   if (dragging && e && e.pointerId !== dragging.pointerId) return;
-  if (dragging && !dragging.humanDrag && dragging.moved) save();
+  if (dragging && !dragging.humanDrag && dragging.moved) {
+    if (dragging.interiorId) renderInteriorPanel();
+    save();
+  }
   dragging = null;
   controls.enabled = true;
 }
@@ -265,10 +387,31 @@ window.addEventListener("keydown", e => {
   if (shell.getTab() !== "studio") return; // Atlas owns the keyboard on its tab
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.key === "Escape" && intMode !== "idle") { setIntMode("idle"); e.preventDefault(); return; }
   const b = selectedBuilding();
   if (!b) return;
+  const it = selectedInterior ? interiorById(b, selectedInterior) : null;
   const step = (e.shiftKey ? 5 : 1) * (state.units === "ft" ? FT : 0.5);
   let handled = true;
+  if (it && it.kind === "item") {
+    switch (e.key) {
+      case "ArrowUp": it.z -= step; break;
+      case "ArrowDown": it.z += step; break;
+      case "ArrowLeft": it.x -= step; break;
+      case "ArrowRight": it.x += step; break;
+      case "q": case "Q": it.rot = (it.rot - (e.shiftKey ? 1 : 15) + 360) % 360; break;
+      case "e": case "E": it.rot = (it.rot + (e.shiftKey ? 1 : 15)) % 360; break;
+      case "Delete": case "Backspace":
+        b.interior = b.interior.filter(x => x.id !== it.id);
+        selectedInterior = null;
+        changed(b.id);
+        e.preventDefault(); e.stopPropagation();
+        return;
+      default: handled = false;
+    }
+    if (handled) { e.preventDefault(); e.stopPropagation(); changed(b.id); }
+    return;
+  }
   switch (e.key) {
     case "ArrowUp": b.z -= step; break;
     case "ArrowDown": b.z += step; break;
@@ -281,6 +424,10 @@ window.addEventListener("keydown", e => {
         const bb = buildingById(state.selectedOpening.bId);
         if (bb) bb.openings = bb.openings.filter(o => o.id !== state.selectedOpening.oId);
         state.selectedOpening = null;
+        changed(b.id);
+      } else if (selectedInterior) {
+        b.interior = b.interior.filter(x => x.id !== selectedInterior);
+        selectedInterior = null;
         changed(b.id);
       } else {
         removeBuilding(b.id);
@@ -307,6 +454,12 @@ function changed(id) {
   save();
 }
 function changedAll() {
+  if (!state.buildings.length) {
+    insideView = false;
+    $("lookInsideBtn").classList.remove("active");
+    setIntMode("idle");
+  }
+  applyClip(); // never leave a stale clip plane after structural changes
   rebuildAll();
   renderPanels();
   save();
@@ -314,9 +467,12 @@ function changedAll() {
 
 /* ---------------- panels ---------------- */
 function renderPanels() {
+  // single-building mode: the one building is always the selection
+  if (state.buildings.length && !selectedBuilding()) state.selectedId = state.buildings[0].id;
   renderBuildingList();
   renderSelected();
   renderOpenings();
+  renderInteriorPanel();
 }
 
 function renderBuildingList() {
@@ -395,7 +551,7 @@ function renderOpenings() {
     const el = document.createElement("div");
     el.className = "b-item" + (isSel ? " selected" : "") + (bad.includes(o) ? " bad" : "");
     el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
-    el.querySelector(".b-name").textContent = (bad.includes(o) ? "⚠ " : "") + t.label;
+    el.querySelector(".b-name").textContent = (bad.includes(o) ? "⚠ " : "") + (o.label || t.label);
     el.querySelector(".b-dims").textContent = `${fmtLen(o.w)}×${fmtLen(o.h)} @ ${fmtLen(o.u)}`;
     el.addEventListener("click", ev => {
       if (ev.target.classList.contains("b-del")) return;
@@ -423,28 +579,210 @@ function renderOpenings() {
   setVal("oU", round2(toUI(sel.u)));
 }
 
-/* ---------------- panel wiring ---------------- */
-function wirePanels() {
-  // templates
+/* ---------------- interior panel ---------------- */
+function setIntMode(next, spec = null) {
+  intMode = next;
+  intPlaceSpec = spec || intPlaceSpec;
+  wallFirst = null;
+  renderer.domElement.style.cursor = next === "idle" ? "" : "crosshair";
+  $("intPlaceBtn").classList.toggle("active", next === "place");
+  $("intWallBtn").classList.toggle("active", next === "wall");
+}
+
+function paletteEntries() {
+  const out = Object.entries(INTERIOR_TYPES).map(([key, t]) => ({
+    value: "std:" + key, label: t.label, spec: { name: t.label, type: key, w: t.w, d: t.d, h: t.h, color: t.color },
+  }));
+  bridge.getCatalog().forEach((row, i) => {
+    if (row.kind !== "equipment") return;
+    out.push({
+      value: "cat:" + i,
+      label: row.name + (row.brand ? ` — ${row.brand}` : ""),
+      spec: { name: row.name, brand: row.brand, type: row.type || "custom", w: row.w, d: row.d, h: row.h, color: row.color },
+    });
+  });
+  return out;
+}
+function renderInteriorPalette() {
+  const sel = $("intType");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  for (const e of paletteEntries()) {
+    const opt = document.createElement("option");
+    opt.value = e.value;
+    opt.textContent = e.label;
+    sel.appendChild(opt);
+  }
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+
+function renderInteriorPanel() {
+  const sec = $("interiorSection");
+  const b = selectedBuilding();
+  if (!b) { sec.style.display = "none"; return; }
+  sec.style.display = "";
+  // floor chips
+  activeFloor = Math.min(activeFloor, b.stories);
+  const chips = $("floorChips");
+  chips.innerHTML = "";
+  for (let f = 1; f <= Math.min(b.stories, 10); f++) {
+    const btn = document.createElement("button");
+    btn.textContent = f;
+    btn.classList.toggle("active", f === activeFloor);
+    btn.addEventListener("click", () => {
+      activeFloor = f;
+      applyClip();
+      renderInteriorPanel();
+      refreshHelpers();
+    });
+    chips.appendChild(btn);
+  }
+  $("lookInsideBtn").classList.toggle("active", insideView);
+
+  // items on the active floor
+  const list = $("intList");
+  list.innerHTML = "";
+  const items = interiorOnFloor(b, activeFloor);
+  if (!items.length) {
+    list.innerHTML = `<div class="empty-note">Nothing on floor ${activeFloor} yet.</div>`;
+  }
+  for (const it of items) {
+    const el = document.createElement("div");
+    el.className = "b-item" + (it.id === selectedInterior ? " selected" : "");
+    el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
+    el.querySelector(".b-name").textContent = (it.kind === "wall" ? "▭ " : "") + it.name + (it.brand ? ` — ${it.brand}` : "");
+    el.querySelector(".b-dims").textContent = it.kind === "wall"
+      ? fmtLen(Math.hypot(it.x2 - it.x1, it.z2 - it.z1))
+      : `${fmtLen(it.w)}×${fmtLen(it.d)}×${fmtLen(it.h)}`;
+    el.addEventListener("click", ev => {
+      if (ev.target.classList.contains("b-del")) return;
+      selectedInterior = it.id;
+      state.selectedOpening = null;
+      renderPanels();
+      refreshHelpers();
+    });
+    el.querySelector(".b-del").addEventListener("click", () => {
+      b.interior = b.interior.filter(x => x.id !== it.id);
+      if (selectedInterior === it.id) selectedInterior = null;
+      changed(b.id);
+    });
+    list.appendChild(el);
+  }
+
+  // selected item editor
+  const ed = $("intEditor");
+  const sel = selectedInterior ? interiorById(b, selectedInterior) : null;
+  if (!sel || sel.kind !== "item") { ed.style.display = "none"; return; }
+  ed.style.display = "";
+  $("intSelName").textContent = sel.name + (sel.brand ? ` — ${sel.brand}` : "");
+  setVal("iW", round2(toUI(sel.w)));
+  setVal("iD", round2(toUI(sel.d)));
+  setVal("iH", round2(toUI(sel.h)));
+  setVal("iRot", Math.round(sel.rot));
+}
+
+/* ---------------- catalog panel ---------------- */
+function renderCatalogPanel() {
+  const holder = $("catList");
+  holder.innerHTML = "";
+  const rows = bridge.getCatalog();
+  if (!rows.length) {
+    holder.innerHTML = `<div class="empty-note">No custom data yet — upload a CSV of your equipment, window/door products, and building presets.</div>`;
+    return;
+  }
+  rows.forEach((row, i) => {
+    const el = document.createElement("div");
+    el.className = "b-item";
+    el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
+    el.querySelector(".b-name").textContent =
+      `${row.kind === "equipment" ? "🔧" : row.kind === "opening" ? "🪟" : "🏢"} ${row.name}${row.brand ? " — " + row.brand : ""}`;
+    el.querySelector(".b-dims").textContent = row.kind === "preset"
+      ? `${fmtLen(row.w)}×${fmtLen(row.d)}·${row.stories}st`
+      : row.kind === "opening" ? `${fmtLen(row.w)}×${fmtLen(row.h)}` : `${fmtLen(row.w)}×${fmtLen(row.d)}×${fmtLen(row.h)}`;
+    el.querySelector(".b-del").addEventListener("click", () => bridge.removeCatalogRow(i));
+    holder.appendChild(el);
+  });
+}
+function catalogChanged() {
+  renderInteriorPalette();
+  renderOpeningTypeOptions();
+  renderTemplates();
+  renderCatalogPanel();
+}
+
+/* opening type dropdown: built-ins + catalog opening products */
+function renderOpeningTypeOptions() {
+  const sel = $("addType");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  for (const [key, t] of Object.entries(OPENING_TYPES)) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = t.label;
+    sel.appendChild(opt);
+  }
+  bridge.getCatalog().forEach((row, i) => {
+    if (row.kind !== "opening") return;
+    const opt = document.createElement("option");
+    opt.value = "cat:" + i;
+    opt.textContent = `${row.name}${row.brand ? " — " + row.brand : ""} (${fmtLen(row.w)}×${fmtLen(row.h)})`;
+    sel.appendChild(opt);
+  });
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+function resolveOpeningChoice(value) {
+  if (value.startsWith("cat:")) {
+    const row = bridge.getCatalog()[parseInt(value.slice(4), 10)];
+    if (row && row.kind === "opening") {
+      return { type: row.baseType, w: row.w, h: row.h,
+        sill: row.sill ?? OPENING_TYPES[row.baseType].sill, label: row.name };
+    }
+    return { type: "fixed" };
+  }
+  return { type: value };
+}
+
+/* templates grid: built-ins + catalog presets; one building per project */
+function startBuilding(spec) {
+  if (state.buildings.length &&
+      !confirm(`Replace the current building with “${spec.name}”? (Save the project first if you want to keep it.)`)) return;
+  for (const old of [...state.buildings]) removeBuilding(old.id);
+  makeBuilding({ ...spec, x: 0, z: 0 });
+  activeFloor = 1;
+  selectedInterior = null;
+  editFace = "s";
+  applyClip();
+  changedAll();
+  frameSelected();
+}
+function renderTemplates() {
   const holder = $("templateGrid");
-  for (const [key, t] of Object.entries(TEMPLATES)) {
+  holder.innerHTML = "";
+  for (const [, t] of Object.entries(TEMPLATES)) {
     const btn = document.createElement("button");
     btn.innerHTML = `<span class="t-icon">${t.icon}</span>${t.label}`;
-    btn.addEventListener("click", () => {
-      const spec = t.make();
-      // place next to existing work
-      let x = 0, z = 0;
-      if (state.buildings.length) {
-        const maxX = Math.max(...state.buildings.map(b => b.x + b.plan.w / 2));
-        x = maxX + spec.plan.w / 2 + 6;
-      }
-      makeBuilding({ ...spec, x, z });
-      editFace = "s";
-      changedAll();
-      frameSelected();
-    });
+    btn.addEventListener("click", () => startBuilding(t.make()));
     holder.appendChild(btn);
   }
+  bridge.getCatalog().forEach(row => {
+    if (row.kind !== "preset") return;
+    const btn = document.createElement("button");
+    btn.innerHTML = `<span class="t-icon">📦</span>`;
+    btn.appendChild(document.createTextNode(row.name));
+    btn.title = row.brand || "";
+    btn.addEventListener("click", () => startBuilding({
+      name: row.name, assetType: row.type || "custom",
+      plan: { w: row.w, d: row.d }, stories: row.stories, floorH: row.floorH,
+      parapet: row.parapet, material: MATERIALS[row.material] ? row.material : "concrete",
+    }));
+    holder.appendChild(btn);
+  });
+}
+
+/* ---------------- panel wiring ---------------- */
+function wirePanels() {
+  renderTemplates();
+  $("bDup").style.display = "none"; // one building per project
 
   // building fields
   $("bName").addEventListener("input", () => { const b = selectedBuilding(); if (b) { b.name = $("bName").value; renderBuildingList(); save(); } });
@@ -496,28 +834,25 @@ function wirePanels() {
       refreshHelpers();
     }));
 
-  // add opening
+  // add opening (built-in types + catalog products)
   const typeSel = $("addType");
-  for (const [key, t] of Object.entries(OPENING_TYPES)) {
-    const opt = document.createElement("option");
-    opt.value = key;
-    opt.textContent = t.label;
-    typeSel.appendChild(opt);
-  }
+  renderOpeningTypeOptions();
   $("addOpeningBtn").addEventListener("click", () => {
     const b = selectedBuilding();
     if (!b) return;
-    const type = typeSel.value;
-    const t = OPENING_TYPES[type];
+    const choice = resolveOpeningChoice(typeSel.value);
+    const t = OPENING_TYPES[choice.type];
+    const w = choice.w ?? t.w, h = choice.h ?? t.h, sill = choice.sill ?? t.sill;
     const L = faceLength(b, editFace);
     // march the whole face for a free slot
     const { ok } = fittedOpenings(b, editFace);
-    let u = t.w / 2 + 0.6, found = false;
-    while (u <= L - t.w / 2 - 0.3) {
-      if (openingFits(b, { face: editFace, type, u, sill: t.sill, w: t.w, h: t.h }, ok)) { found = true; break; }
+    let u = w / 2 + 0.6, found = false;
+    while (u <= L - w / 2 - 0.3) {
+      if (openingFits(b, { face: editFace, type: choice.type, u, sill, w, h }, ok)) { found = true; break; }
       u += 0.25;
     }
-    const o = addOpening(b, { face: editFace, type, u: found ? u : L / 2 });
+    const o = addOpening(b, { face: editFace, type: choice.type, u: found ? u : L / 2, w, h, sill });
+    if (choice.label) o.label = choice.label;
     if (!found) toast("No free slot on this face — placed at center (flagged); move or resize it");
     state.selectedOpening = { bId: b.id, oId: o.id };
     changed(b.id);
@@ -527,7 +862,11 @@ function wirePanels() {
     if (!b) return;
     const n = parseInt($("arrayCount").value, 10);
     if (!Number.isFinite(n) || n < 1) return;
-    arrayOpenings(b, editFace, typeSel.value, Math.min(n, 60));
+    const choice = resolveOpeningChoice(typeSel.value);
+    const made = arrayOpenings(b, editFace, choice.type, Math.min(n, 60), choice);
+    if (choice.label && made > 0) { // slice(-0) would label every opening
+      for (const o of b.openings.slice(-made)) o.label = choice.label;
+    }
     changed(b.id);
   });
   $("clearFaceBtn").addEventListener("click", () => {
@@ -538,8 +877,13 @@ function wirePanels() {
     changed(b.id);
   });
 
-  // opening editor
-  $("oType").innerHTML = typeSel.innerHTML;
+  // opening editor (base types only — catalog products resolve to a base type)
+  for (const [key, t] of Object.entries(OPENING_TYPES)) {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = t.label;
+    $("oType").appendChild(opt);
+  }
   $("oType").addEventListener("change", () => {
     const b = selectedBuilding();
     const o = state.selectedOpening && openingById(b, state.selectedOpening.oId);
@@ -569,6 +913,90 @@ function wirePanels() {
       state.selectedOpening = null;
       changed(b.id);
     }
+  });
+
+  // interior
+  renderInteriorPalette();
+  $("intPlaceBtn").addEventListener("click", () => {
+    if (intMode === "place") { setIntMode("idle"); return; }
+    const entry = paletteEntries().find(x => x.value === $("intType").value);
+    if (!entry) return;
+    setIntMode("place", entry.spec);
+    toast(`Click the floor to place “${entry.spec.name}” (Esc to cancel)`);
+  });
+  $("intWallBtn").addEventListener("click", () => {
+    if (intMode === "wall") { setIntMode("idle"); return; }
+    setIntMode("wall");
+    toast("Partition wall: click the start point, then the end point (Esc to cancel)");
+  });
+  $("lookInsideBtn").addEventListener("click", () => {
+    insideView = !insideView;
+    $("lookInsideBtn").classList.toggle("active", insideView);
+    applyClip();
+    if (insideView) {
+      const b = selectedBuilding();
+      if (b) { // tilt down into the opened floor
+        const r = Math.max(b.plan.w, b.plan.d);
+        camera.position.set(b.x + r * 0.55, floorBase(b, activeFloor) + r * 0.85, b.z + r * 0.7);
+        controls.target.set(b.x, floorBase(b, activeFloor) + 1, b.z);
+      }
+    }
+  });
+  const intField = (id, key) => {
+    $(id).addEventListener("input", () => {
+      const b = selectedBuilding();
+      const it = selectedInterior ? interiorById(b, selectedInterior) : null;
+      const v = parseFloat($(id).value);
+      if (!it || it.kind !== "item" || !Number.isFinite(v)) return;
+      if (key === "rot") it.rot = ((v % 360) + 360) % 360;
+      else if (v > 0.02) it[key] = fromUI(v);
+      changed(b.id);
+    });
+  };
+  intField("iW", "w"); intField("iD", "d"); intField("iH", "h"); intField("iRot", "rot");
+  $("intDelBtn").addEventListener("click", () => {
+    const b = selectedBuilding();
+    if (b && selectedInterior) {
+      b.interior = b.interior.filter(x => x.id !== selectedInterior);
+      selectedInterior = null;
+      changed(b.id);
+    }
+  });
+
+  // catalog
+  renderCatalogPanel();
+  bridge.onCatalogChanged(catalogChanged);
+  $("catUploadBtn").addEventListener("click", () => $("catFile").click());
+  $("catFile").addEventListener("change", e => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result);
+      try {
+        if (f.name.toLowerCase().endsWith(".json")) {
+          const arr = JSON.parse(text);
+          if (!Array.isArray(arr)) throw new Error("not a catalog array");
+          bridge.setCatalog(bridge.getCatalog().concat(arr));
+          toast(`Imported ${arr.length} catalog entr${arr.length === 1 ? "y" : "ies"}`);
+        } else {
+          const { added, skipped } = bridge.importCatalogCSV(text, state.units);
+          toast(`Catalog: ${added} added${skipped ? `, ${skipped} skipped` : ""} — pickers updated`);
+        }
+      } catch (err) {
+        toast("Couldn't read that file — CSV with a header row, or an exported catalog JSON");
+      }
+    };
+    reader.readAsText(f);
+  });
+  $("catExportBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(bridge.getCatalog(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "engine-catalog.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   });
 
   // view / project
@@ -745,10 +1173,12 @@ $("sendToMapBtn").addEventListener("click", () => {
 
 /* test hooks */
 window.lab = {
-  state, makeBuilding, addOpening, removeBuilding, arrayOpenings,
+  state, makeBuilding, addOpening, addInterior, removeBuilding, arrayOpenings,
   rebuildAll, buildingGroups, scene, camera, controls,
+  get renderer() { return renderer; },
   exportProject, loadProject, frameSelected, setUnits,
   fittedOpenings, faceLength, wallHeight, totalHeight,
+  bridge, startBuilding,
 };
 
 } // end initStudio

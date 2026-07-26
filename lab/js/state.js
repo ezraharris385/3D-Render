@@ -41,6 +41,27 @@ export const OPENING_TYPES = {
 export const FACES = ["s", "e", "n", "w"];
 export const FACE_LABELS = { s: "Front (S)", e: "Right (E)", n: "Back (N)", w: "Left (W)" };
 
+/* ---------------- Interior infrastructure catalog ----------------
+   Built-in items with real dimensions; user-uploaded catalog rows
+   (kind=equipment) extend this list at runtime. */
+export const INTERIOR_TYPES = {
+  "rack":        { label: "Server rack (42U)",   w: 0.6096, d: 1.0668, h: 2.1336, color: "#1f2937" },
+  "crac":        { label: "CRAC / CRAH unit",    w: 2.4384, d: 0.9144, h: 1.9812, color: "#5ad7d2" },
+  "ups":         { label: "UPS cabinet",         w: 1.2192, d: 0.9144, h: 1.9812, color: "#9a8cff" },
+  "pdu":         { label: "PDU",                 w: 0.9144, d: 0.9144, h: 1.9812, color: "#7bd88f" },
+  "switchgear":  { label: "Switchgear",          w: 2.7432, d: 1.2192, h: 2.2860, color: "#e4b34a" },
+  "panel":       { label: "Electrical panel",    w: 0.5080, d: 0.1524, h: 1.2192, color: "#93a3b3" },
+  "waterheater": { label: "Water heater",        w: 0.6096, d: 0.6096, h: 1.5240, color: "#c0c8d0" },
+  "racking":     { label: "Pallet racking bay",  w: 2.7432, d: 1.0668, h: 6.0960, color: "#ff8b5e" },
+  "workbench":   { label: "Workbench / desk",    w: 1.8288, d: 0.7620, h: 0.9144, color: "#a97142" },
+  "machine":     { label: "Machine / skid",      w: 2.4384, d: 1.5240, h: 1.8288, color: "#4da3ff" },
+};
+
+export function floorBase(b, floor) { return (floor - 1) * b.floorH; }
+export function interiorOnFloor(b, floor) {
+  return (b.interior || []).filter(it => it.floor === floor);
+}
+
 /* ---------------- State ---------------- */
 export const state = {
   units: "ft",
@@ -141,12 +162,35 @@ export function makeBuilding(partial = {}) {
     roof: { type: "flat", pitch: 4, ridge: "x", ...(partial.roof || {}) },
     material: partial.material || "concrete",
     openings: [],
+    interior: [],
   };
   for (const o of (partial.openings || [])) addOpening(b, o);
+  for (const it of (partial.interior || [])) addInterior(b, it);
   state.buildings.push(b);
   state.selectedId = b.id;
   state.selectedOpening = null;
   return b;
+}
+export function addInterior(b, spec) {
+  const it = {
+    id: state.nextOpeningId++, // shared id sequence keeps everything unique
+    kind: spec.kind === "wall" ? "wall" : "item",
+    floor: Math.max(1, Math.round(spec.floor || 1)),
+    name: spec.name || "Item",
+    color: spec.color || "#8fa3b8",
+  };
+  if (it.kind === "wall") {
+    it.x1 = spec.x1 ?? 0; it.z1 = spec.z1 ?? 0;
+    it.x2 = spec.x2 ?? 1; it.z2 = spec.z2 ?? 0;
+    it.t = spec.t || 0.12;
+  } else {
+    it.x = spec.x ?? 0; it.z = spec.z ?? 0; it.rot = spec.rot || 0;
+    it.w = spec.w || 1; it.d = spec.d || 1; it.h = spec.h || 1;
+    it.type = spec.type || "";
+    it.brand = spec.brand || "";
+  }
+  b.interior.push(it);
+  return it;
 }
 export function addOpening(b, spec) {
   const t = OPENING_TYPES[spec.type] || OPENING_TYPES["fixed"];
@@ -168,21 +212,22 @@ export function removeBuilding(id) {
 }
 /* even array of openings across a face; positions colliding with
    existing openings are skipped, never silently overlapped */
-export function arrayOpenings(b, face, type, count) {
+export function arrayOpenings(b, face, type, count, override = {}) {
   const t = OPENING_TYPES[type];
   const L = faceLength(b, face);
   if (!t || count < 1) return 0;
-  const margin = Math.max(0.6, t.w / 2 + 0.15);
+  const w = override.w ?? t.w, h = override.h ?? t.h, sill = override.sill ?? t.sill;
+  const margin = Math.max(0.6, w / 2 + 0.15);
   const usable = L - margin * 2;
-  if (usable < t.w * count + 0.1 * (count - 1)) {
-    count = Math.max(1, Math.floor(usable / (t.w + 0.4)));
+  if (usable < w * count + 0.1 * (count - 1)) {
+    count = Math.max(1, Math.floor(usable / (w + 0.4)));
   }
   if (count < 1) return 0;
   const accepted = [...fittedOpenings(b, face).ok];
   let made = 0;
   for (let i = 0; i < count; i++) {
-    const u = count === 1 ? L / 2 : margin + t.w / 2 + (usable - t.w) * (i / (count - 1));
-    const spec = { face, type, u, sill: t.sill, w: t.w, h: t.h };
+    const u = count === 1 ? L / 2 : margin + w / 2 + (usable - w) * (i / (count - 1));
+    const spec = { face, type, u, sill, w, h };
     if (!openingFits(b, spec, accepted)) continue;
     const o = addOpening(b, spec);
     accepted.push(o);
@@ -211,6 +256,23 @@ export function validBuilding(b) {
     o && OPENING_TYPES[o.type] && ["n", "s", "e", "w"].includes(o.face) &&
     Number.isFinite(o.u) && Number.isFinite(o.sill) &&
     Number.isFinite(o.w) && o.w > 0 && Number.isFinite(o.h) && o.h > 0);
+  const CLR = /^#[0-9a-fA-F]{3,8}$/;
+  b.interior = (Array.isArray(b.interior) ? b.interior : []).filter(it => {
+    if (!it || !Number.isFinite(it.floor) || it.floor < 1) return false;
+    if (typeof it.color !== "string" || !CLR.test(it.color)) it.color = "#8fa3b8";
+    if (typeof it.name !== "string") it.name = "Item";
+    if (it.kind === "wall") {
+      if (![it.x1, it.z1, it.x2, it.z2].every(Number.isFinite)) return false;
+      if (!Number.isFinite(it.t) || it.t <= 0) it.t = 0.12;
+      return true;
+    }
+    it.kind = "item";
+    if (!Number.isFinite(it.rot)) it.rot = 0;
+    return [it.x, it.z].every(Number.isFinite) &&
+      Number.isFinite(it.w) && it.w > 0 &&
+      Number.isFinite(it.d) && it.d > 0 &&
+      Number.isFinite(it.h) && it.h > 0;
+  });
   return true;
 }
 
@@ -236,6 +298,7 @@ export function loadProject(data) {
   for (const b of incoming) {
     b.id = state.nextId++;
     for (const o of b.openings) { o.id = ++maxO; }
+    for (const it of b.interior) { it.id = ++maxO; }
     state.buildings.push(b);
   }
   state.nextOpeningId = maxO + 1;

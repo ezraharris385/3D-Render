@@ -40,14 +40,10 @@
 
   <div class="panels">
     <div class="section">
-      <h2>Asset templates</h2>
+      <h2>Start a building</h2>
       <div id="templateGrid"></div>
-      <p class="hint">Templates are starting points with real construction defaults — every dimension, material, and opening stays editable.</p>
-    </div>
-
-    <div class="section">
-      <h2>Buildings</h2>
-      <div id="buildingList"></div>
+      <p class="hint">One building per project. Picking a template replaces the current building (you'll be asked first) — every dimension, material, and opening stays editable.</p>
+      <div id="buildingList" style="display:none"></div>
     </div>
 
     <div class="section" id="selectedSection" style="display:none">
@@ -131,6 +127,46 @@
           </div>
           <p class="hint">Position is the distance from the left edge of the face (seen from outside) to the opening's centerline. Click any window in 3D to select it.</p>
         </div>
+      </div>
+    </div>
+
+    <div class="section" id="interiorSection" style="display:none">
+      <h2>Interior infrastructure</h2>
+      <div class="card">
+        <div class="row">
+          <label class="small" style="margin:0">Floor</label>
+          <div class="seg grow" id="floorChips"></div>
+          <button id="lookInsideBtn" title="Cut the building open above this floor">👁 Inside</button>
+        </div>
+        <div class="row">
+          <select id="intType" class="grow"></select>
+          <button id="intPlaceBtn" class="primary">＋ Place</button>
+          <button id="intWallBtn" title="Draw a partition wall: click two points">▭ Wall</button>
+        </div>
+        <div id="intList" style="margin-top:8px"></div>
+        <div id="intEditor" style="display:none; margin-top:8px; border-top:1px solid var(--line); padding-top:8px">
+          <div class="row"><span class="hint grow" style="margin:0" id="intSelName"></span><button id="intDelBtn" class="danger">✕</button></div>
+          <div class="grid4">
+            <div><label class="small">W (<span class="unitLbl">ft</span>)</label><input type="number" id="iW" step="0.25" min="0.1"></div>
+            <div><label class="small">D (<span class="unitLbl">ft</span>)</label><input type="number" id="iD" step="0.25" min="0.1"></div>
+            <div><label class="small">H (<span class="unitLbl">ft</span>)</label><input type="number" id="iH" step="0.25" min="0.1"></div>
+            <div><label class="small">Rot (°)</label><input type="number" id="iRot" step="15"></div>
+          </div>
+        </div>
+        <p class="hint">Pick a floor, place equipment with real dimensions, or draw partition walls (two clicks). <b>👁 Inside</b> slices the building open above the active floor so you can work in it. Click any interior item in 3D to select it; drag to move.</p>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Your data — catalog</h2>
+      <div class="card">
+        <div class="row">
+          <button id="catUploadBtn" class="grow">⬆ Upload CSV</button>
+          <button id="catExportBtn">Export</button>
+          <input type="file" id="catFile" accept=".csv,text/csv,.json,application/json" style="display:none">
+        </div>
+        <div id="catList" style="margin-top:8px"></div>
+        <p class="hint">Columns: <code>kind</code> (equipment / opening / preset), <code>name, brand, type, width, depth, height, sill, color</code> — presets also take <code>stories, floorheight, parapet, material</code>. Dimensions in the current units. Equipment rows join the interior palette, opening rows join the windows &amp; doors picker, presets join the building templates. The whole system adapts to what you upload.</p>
       </div>
     </div>
 

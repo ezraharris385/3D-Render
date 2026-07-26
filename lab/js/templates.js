@@ -93,10 +93,31 @@ export const TEMPLATES = {
     icon: "🖥️",
     make() {
       const w = 76.2, d = 36.576; // 250 × 120 ft
+      // interior: hot/cold-aisle rack rows + mechanical/electrical lineup
+      const interior = [];
+      for (let row = 0; row < 4; row++) {
+        const z = -10 + row * 4.5;
+        for (let i = 0; i < 12; i++) {
+          interior.push({ kind: "item", floor: 1, name: "Rack", type: "rack",
+            x: -22 + i * 0.75, z, rot: 0, w: 0.6096, d: 1.0668, h: 2.1336, color: "#1f2937" });
+        }
+        interior.push({ kind: "item", floor: 1, name: "CRAC", type: "crac",
+          x: -25.5, z, rot: 90, w: 2.4384, d: 0.9144, h: 1.9812, color: "#5ad7d2" });
+      }
+      for (let i = 0; i < 3; i++) {
+        interior.push({ kind: "item", floor: 1, name: "UPS", type: "ups",
+          x: 20 + i * 2, z: -12, rot: 0, w: 1.2192, d: 0.9144, h: 1.9812, color: "#9a8cff" });
+      }
+      interior.push({ kind: "item", floor: 1, name: "Switchgear", type: "switchgear",
+        x: 26, z: -6, rot: 90, w: 2.7432, d: 1.2192, h: 2.286, color: "#e4b34a" });
+      // electrical room demising wall
+      interior.push({ kind: "wall", floor: 1, name: "Partition", x1: 15, z1: -18.288, x2: 15, z2: 0, t: 0.15 });
+      interior.push({ kind: "wall", floor: 1, name: "Partition", x1: 15, z1: 0, x2: 38.1, z2: 0, t: 0.15 });
       return {
         name: "Data Center", assetType: "datacenter",
         plan: { w, d }, stories: 1, floorH: 24 * FT, parapet: 5 * FT,
         material: "concrete",
+        interior,
         openings: [
           { face: "s", type: "glass-door", u: 6 },
           { face: "s", type: "fixed", u: 10.5, sill: 4 * FT },
