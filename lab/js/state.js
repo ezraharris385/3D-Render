@@ -55,6 +55,23 @@ export const INTERIOR_TYPES = {
   "racking":     { label: "Pallet racking bay",  w: 2.7432, d: 1.0668, h: 6.0960, color: "#ff8b5e" },
   "workbench":   { label: "Workbench / desk",    w: 1.8288, d: 0.7620, h: 0.9144, color: "#a97142" },
   "machine":     { label: "Machine / skid",      w: 2.4384, d: 1.5240, h: 1.8288, color: "#4da3ff" },
+
+  /* High-level buildout SPACES — generic, unbranded room-scale zones that
+     show what a buildout would look like. Rendered as translucent volumes
+     with a floor pad and name tag; always classified as buildout. */
+  "open-office": { label: "Open office zone",        w: 9.1440, d: 9.1440, h: 2.7432, color: "#8fb4d9", space: true }, // 30×30
+  "office-run":  { label: "Private office run",      w: 7.3152, d: 3.0480, h: 2.7432, color: "#7fa6c9", space: true }, // 24×10
+  "conference":  { label: "Conference room",         w: 6.0960, d: 3.6576, h: 2.7432, color: "#9a8cff", space: true }, // 20×12
+  "reception":   { label: "Reception / lobby",       w: 6.0960, d: 4.8768, h: 2.7432, color: "#d9b98f", space: true }, // 20×16
+  "break-room":  { label: "Break room / kitchenette", w: 4.8768, d: 3.6576, h: 2.7432, color: "#a3c98f", space: true }, // 16×12
+  "restroom":    { label: "Restroom core",           w: 4.8768, d: 3.0480, h: 2.7432, color: "#a9c4c9", space: true }, // 16×10
+  "it-room":     { label: "IT / server room",        w: 3.6576, d: 3.0480, h: 2.7432, color: "#87b0b8", space: true }, // 12×10
+  "fitting":     { label: "Fitting rooms",           w: 4.2672, d: 2.4384, h: 2.4384, color: "#c9a9c4", space: true }, // 14×8
+  "checkout":    { label: "Checkout / cash wrap",    w: 4.8768, d: 1.5240, h: 1.1176, color: "#c9b46e", space: true }, // 16×5
+  "boh-storage": { label: "Back-of-house storage",   w: 6.0960, d: 4.5720, h: 3.0480, color: "#9aa5ad", space: true }, // 20×15
+  "amenity":     { label: "Amenity lounge",          w: 9.1440, d: 6.0960, h: 2.7432, color: "#c9967e", space: true }, // 30×20
+  "fitness":     { label: "Fitness room",            w: 7.6200, d: 6.0960, h: 2.7432, color: "#b78fc9", space: true }, // 25×20
+  "unit-1br":    { label: "Residential unit (1BR)",  w: 10.668, d: 7.3152, h: 2.7432, color: "#c9c08f", space: true }, // 35×24
 };
 
 export function floorBase(b, floor) { return (floor - 1) * b.floorH; }
@@ -211,7 +228,11 @@ export function addInterior(b, spec) {
     it.w = spec.w || 1; it.d = spec.d || 1; it.h = spec.h || 1;
     it.type = spec.type || "";
     it.brand = spec.brand || "";
-    it.sys = SYS_GROUPS[spec.sys] ? spec.sys : classifySys(`${it.type} ${it.name}`);
+    // explicit only — a catalog item whose type happens to match a space key
+    // (e.g. "checkout") must NOT silently become a translucent zone
+    it.space = spec.space === true;
+    it.sys = it.space ? "buildout"
+      : SYS_GROUPS[spec.sys] ? spec.sys : classifySys(`${it.type} ${it.name}`);
   }
   b.interior.push(it);
   return it;
@@ -293,7 +314,9 @@ export function validBuilding(b) {
     }
     it.kind = "item";
     if (!Number.isFinite(it.rot)) it.rot = 0;
-    if (!SYS_GROUPS[it.sys]) it.sys = classifySys(`${it.type} ${it.name}`);
+    it.space = it.space === true;
+    if (it.space) it.sys = "buildout";
+    else if (!SYS_GROUPS[it.sys]) it.sys = classifySys(`${it.type} ${it.name}`);
     return [it.x, it.z].every(Number.isFinite) &&
       Number.isFinite(it.w) && it.w > 0 &&
       Number.isFinite(it.d) && it.d > 0 &&

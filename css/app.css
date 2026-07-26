@@ -242,6 +242,11 @@ button.wide { width: 100%; }
 .b-del:hover { color: var(--danger); background: none; }
 .b-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .empty-note { font-size: .78rem; color: var(--muted); padding: 4px 2px; }
+.sys-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .66rem; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 6px 0 2px;
+}
 
 /* armed placement modes read as "hot", distinct from primary blue */
 #inPlaceBtn.active, #inWallBtn.active { background: #ffd166; border-color: #ffd166; color: #231a00; }

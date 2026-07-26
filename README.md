@@ -10,13 +10,13 @@
 4. **📍 Send to Atlas map** — the engine switches tabs and arms placement; click the map and your project lands as true-scale 3D massing. Drag to move it, rotate it to sit the lot, place as many saved projects as you like.
 5. **🌍 Earth** — paste a Google Map Tiles API key and the same placed sites render over photorealistic 3D photogrammetry.
 
-| 🏗️ Studio | 🔧 Interior |
+| 🏗️ Studio | 🔧 Interior — systems overlay |
 | --- | --- |
 | ![Studio](docs/studio.png) | ![Interior](docs/interior.png) |
 
-| 🛰️ Atlas |
-| --- |
-| ![Atlas](docs/atlas.png) |
+| 🔧 Interior — buildout spaces | 🛰️ Atlas |
+| --- | --- |
+| ![Buildout spaces](docs/spaces.png) | ![Atlas](docs/atlas.png) |
 
 ---
 
@@ -36,11 +36,14 @@ A black-space design studio where **nothing is left to guess**:
 
 Everything inside the building lives here; the shell is Studio's and arrives automatically:
 
+- **Import from the library** — pull any saved Studio project straight into this tab and complete its interior, without touching the shell (shell edits stay in Studio; Studio resyncs when you switch back).
 - **Systems classification** — every placed element belongs to **⚡ Power** (transformers, switchgear, UPS, PDUs, generators, panels…), **🌡 MEP** (CRAC/CRAH, RTUs, chillers, AHUs, boilers…), **🚰 Utility** (pumps, water heaters, fire pumps, compressors, tanks…), or **🧱 Buildout** (racking, partitions, fixtures, everything else). Uploaded catalog equipment is classified automatically by type and name.
+- **High-level buildout spaces** — generic, unbranded room-scale zones that rough in what a buildout would look like: open office zone, private office run, conference room, reception/lobby, break room, restroom core, IT room, fitting rooms, checkout run, back-of-house storage, amenity lounge, fitness room, residential unit. They render as labeled translucent volumes with a floor pad so the plan reads at a glance, and they drag/resize/rotate like everything else.
+- **Sorted everywhere** — the palette is grouped Power / MEP / Utility / **Buildout — spaces** / **Buildout — fixtures & equipment**, alphabetized within each group; the placed-items list is grouped by system with headers and counts (spaces first, then fixtures, walls last).
 - **Visibility per system** — four toggle buttons show/hide each system independently: hide Buildouts to see the systems alone, or hide systems to see the finished interior.
 - **🔴 Systems overlay** — one switch renders every Power/MEP/Utility element in **red** and ghosts the buildouts to 18% grey, so equipment runs and electrical/mechanical rooms read instantly.
-- **Floor-by-floor doll-house** — floor chips + an Inside view (on by default) slice the building open above the active floor. Place equipment with real dimensions on the floor plane, draw partition walls with two clicks, then click any element in 3D to select it; drag, arrow-key nudge, rotate (Q/E), resize, delete.
-- **Palette grouped by system** — built-in equipment (racks, CRAC/CRAH, UPS, PDUs, switchgear, panels, pallet racking, machines…) plus everything you upload, grouped under Power / MEP / Utility / Buildout. The Data Center template ships with a full rack/CRAC/electrical-room layout to explore.
+- **Floor-by-floor doll-house** — floor chips + an Inside view (on by default) slice the building open above the active floor. Place equipment with real dimensions on the floor plane, draw partition walls with two clicks, then click any element in 3D to select it; drag, arrow-key nudge, rotate (Q/E), resize, delete. Zoom runs from site-wide right down to arm's length from a cabinet, in Studio and Interior both.
+- **Palette + your data** — built-in equipment (racks, CRAC/CRAH, UPS, PDUs, switchgear, panels, pallet racking, machines…) plus everything you upload. The Data Center template ships with a full rack/CRAC/electrical-room layout to explore.
 
 ### Your data — the catalog the system adapts to
 
@@ -106,7 +109,7 @@ GitHub Pages: **Settings → Pages → Deploy from a branch** → `main` / root.
 
 ## Verification
 
-**50 headless-browser checks** across all four tabs: boot + lazy tab lifecycle, non-black canvas regressions on both 3D viewports, the asset/preset picker (5 classes, replace-confirm, catalog presets scoped to their class, unknown types reachable via "Other uploads"), shell-only rendering in Studio, Interior handover, system auto-classification counts, per-system hide/show, red-overlay material verification (cap accents stay hidden), shell click-occlusion (no pick-through the roof), orphan-floor items hidden + flagged when the shell shrinks, armed-mode reset and camera preservation across tab switches, hidden-tab render loops actually pausing, palette grouping, catalog CSV adaptation with per-row deletion, exact product opening sizes, interior round-trip persistence, project library, placement round-trip with exact 35 ft massing heights and ~200 ft footprint edges (independent ellipsoidal check), Atlas core (terrain/OSM 3D/sites), and Earth key-gating — plus multi-agent adversarial code review each round.
+**62 headless-browser checks** across all four tabs: boot + lazy tab lifecycle, non-black canvas regressions on both 3D viewports, the asset/preset picker (5 classes, replace-confirm, catalog presets scoped to their class, unknown types reachable via "Other uploads"), shell-only rendering in Studio, Interior handover, project import from the library (with Studio name/selection resync), system auto-classification counts, per-system hide/show, red-overlay material verification (cap accents stay hidden), shell click-occlusion (no pick-through the roof), buildout spaces rendered as translucent zones that yield clicks to items inside them, footprint-sized selection outlines, depth-tested name tags that clear the doll-house cut, type-collision guard (catalog "checkout" stays equipment), orphan-floor items hidden + flagged when the shell shrinks, armed-mode reset and camera preservation across tab switches, hidden-tab render loops actually pausing, close-zoom limits, sorted palette groups + grouped placed-items list, catalog CSV adaptation with per-row deletion, exact product opening sizes, interior round-trip persistence, project library, placement round-trip with exact 35 ft massing heights and ~200 ft footprint edges (independent ellipsoidal check), Atlas core (terrain/OSM 3D/sites), and Earth key-gating — plus multi-agent adversarial code review each round.
 
 ## Attribution
 

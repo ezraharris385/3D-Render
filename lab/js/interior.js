@@ -10,7 +10,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   state, FT, INTERIOR_TYPES, SYS_GROUPS, classifySys,
   selectedBuilding, addInterior, floorBase, interiorOnFloor,
-  toUI, fromUI, unitSuffix, fmtLen, save,
+  toUI, fromUI, unitSuffix, fmtLen, save, loadProject,
 } from "./state.js";
 import { buildBuilding, buildInteriorOnly, disposeGroup } from "./builder.js";
 import * as bridge from "../../js/bridge.js";
@@ -24,6 +24,10 @@ let shellGroup = null;
 let intGroup = null;
 let helperBox = null;
 let raycaster = new THREE.Raycaster();
+// default Line threshold is a full meter of slop — space edge outlines
+// would steal clicks from half a meter away
+raycaster.params.Line = { threshold: 0.05 };
+raycaster.params.Points = { threshold: 0.05 };
 let pointer = new THREE.Vector2();
 let dragging = null;
 
@@ -65,14 +69,14 @@ function initScene() {
   scene.background = new THREE.Color(0x0a0c0f);
   scene.fog = new THREE.Fog(0x0a0c0f, 320, 900);
 
-  camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2000);
+  camera = new THREE.PerspectiveCamera(48, 1, 0.25, 2000);
   camera.position.set(40, 45, 55);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
-  controls.minDistance = 2;
+  controls.minDistance = 0.5; // walk right up to equipment
   controls.maxDistance = 500;
   controls.target.set(0, 2, 0);
 
@@ -174,14 +178,28 @@ function rebuildInterior() {
   });
   scene.add(intGroup);
   if (selectedId) {
-    let target = null;
-    intGroup.traverse(o => { if (!target && o.userData?.interiorId === selectedId && o.parent === intGroup) target = o; });
-    if (target && target.visible) {
+    const target = helperTargetFor(selectedId);
+    if (target) {
       helperBox = new THREE.BoxHelper(target, 0xffd166);
       scene.add(helperBox);
     }
   }
   renderPanels();
+}
+/* what the selection outline should wrap: for a space, its floor pad —
+   a BoxHelper on the volume would swallow the name-tag sprite's bounds */
+function helperTargetFor(id) {
+  if (!intGroup) return null;
+  let top = null;
+  intGroup.traverse(o => { if (!top && o.userData?.interiorId === id && o.parent === intGroup) top = o; });
+  if (!top || top.visible === false) return null;
+  const b = bld();
+  const it = b ? (b.interior || []).find(i => i.id === id) : null;
+  if (it?.space) {
+    const pad = top.children.find(c => c.isMesh);
+    if (pad) return pad;
+  }
+  return top;
 }
 function applyClip() {
   const b = bld();
@@ -222,14 +240,22 @@ function pickInterior() {
   let ghostFallback = null;
   for (const h of hits) {
     if (h.point.y > cutY) continue;          // clipped away — visually absent
+    // the raycaster ignores visibility, so skip hits on hidden nodes
+    // (e.g. a red-mode-hidden name tag floating in "empty" air)
+    let hidden = false;
+    for (let v = h.object; v && v !== intGroup && v !== shellGroup; v = v.parent) {
+      if (v.visible === false) { hidden = true; break; }
+    }
+    if (hidden) continue;
     let o = h.object;
     while (o && !o.userData?.interiorId) o = o.parent;
     if (!o) return ghostFallback;            // shell surface blocked the click
-    while (o.parent && o.parent !== intGroup) o = o.parent; // cap → its item mesh
+    while (o.parent && o.parent !== intGroup) o = o.parent; // cap/tag → its item mesh
     if (o.visible === false) continue;       // hidden system / orphan floor
     const it = (b?.interior || []).find(i => i.id === o.userData.interiorId);
-    if (redMode && (it?.sys || "buildout") === "buildout") {
-      // ghosted buildouts shouldn't swallow clicks aimed at red systems behind them
+    // room-scale zones and red-mode ghosts yield to solid items behind/inside them
+    const yields = it?.space === true || (redMode && (it?.sys || "buildout") === "buildout");
+    if (yields) {
       if (ghostFallback === null) ghostFallback = o.userData.interiorId;
       continue;
     }
@@ -309,9 +335,8 @@ function onPointerDown(e) {
 function rebuildHelperOnly() {
   if (helperBox) { scene.remove(helperBox); helperBox.dispose?.(); helperBox = null; }
   if (!selectedId || !intGroup) return;
-  let target = null;
-  intGroup.traverse(o => { if (!target && o.userData?.interiorId === selectedId && o.parent === intGroup) target = o; });
-  if (target && target.visible !== false) {
+  const target = helperTargetFor(selectedId);
+  if (target) {
     helperBox = new THREE.BoxHelper(target, 0xffd166);
     scene.add(helperBox);
   }
@@ -378,17 +403,27 @@ window.addEventListener("keydown", e => {
 }, true);
 
 /* ---------------- panels ---------------- */
+const PALETTE_GROUPS = [
+  { key: "power",    label: SYS_GROUPS.power.label },
+  { key: "mep",      label: SYS_GROUPS.mep.label },
+  { key: "utility",  label: SYS_GROUPS.utility.label },
+  { key: "space",    label: "Buildout — spaces" },
+  { key: "buildout", label: "Buildout — fixtures & equipment" },
+];
 function paletteEntries() {
   const out = Object.entries(INTERIOR_TYPES).map(([key, t]) => ({
-    value: "std:" + key, label: t.label, sys: classifySys(`${key} ${t.label}`),
-    spec: { name: t.label, type: key, w: t.w, d: t.d, h: t.h, color: t.color },
+    value: "std:" + key,
+    label: t.label,
+    group: t.space ? "space" : classifySys(`${key} ${t.label}`),
+    spec: { name: t.label, type: key, w: t.w, d: t.d, h: t.h, color: t.color,
+            ...(t.space ? { space: true, sys: "buildout" } : {}) },
   }));
   bridge.getCatalog().forEach((row, i) => {
     if (row.kind !== "equipment") return;
     out.push({
       value: "cat:" + i,
       label: row.name + (row.brand ? ` — ${row.brand}` : ""),
-      sys: classifySys(`${row.type} ${row.name}`),
+      group: classifySys(`${row.type} ${row.name}`),
       spec: { name: row.name, brand: row.brand, type: row.type || "custom", w: row.w, d: row.d, h: row.h, color: row.color },
     });
   });
@@ -398,19 +433,20 @@ function renderPalette() {
   const sel = $("inType");
   const prev = sel.value;
   sel.innerHTML = "";
-  const groups = {};
-  for (const sys of Object.keys(SYS_GROUPS)) {
-    groups[sys] = document.createElement("optgroup");
-    groups[sys].label = SYS_GROUPS[sys].label;
-  }
-  for (const e of paletteEntries()) {
-    const opt = document.createElement("option");
-    opt.value = e.value;
-    opt.textContent = e.label;
-    groups[e.sys].appendChild(opt);
-  }
-  for (const sys of ["power", "mep", "utility", "buildout"]) {
-    if (groups[sys].children.length) sel.appendChild(groups[sys]);
+  const entries = paletteEntries();
+  for (const g of PALETTE_GROUPS) {
+    const members = entries.filter(e => e.group === g.key)
+      .sort((a, b) => a.label.localeCompare(b.label));
+    if (!members.length) continue;
+    const og = document.createElement("optgroup");
+    og.label = g.label;
+    for (const e of members) {
+      const opt = document.createElement("option");
+      opt.value = e.value;
+      opt.textContent = e.label;
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
   }
   if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
@@ -457,28 +493,41 @@ function renderList() {
   if (!items.length) {
     list.innerHTML = `<div class="empty-note">Nothing on floor ${activeFloor} yet — place systems or draw walls.</div>`;
   }
-  for (const it of items) {
-    const el = document.createElement("div");
-    el.className = "b-item" + (it.id === selectedId ? " selected" : "");
-    el.innerHTML = `<span class="b-swatch"></span><span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
-    el.querySelector(".b-swatch").style.background = SYS_GROUPS[it.sys || "buildout"].color;
-    el.querySelector(".b-name").textContent = (it.kind === "wall" ? "▭ " : "") + it.name + (it.brand ? ` — ${it.brand}` : "");
-    el.querySelector(".b-dims").textContent = it.kind === "wall"
-      ? fmtLen(Math.hypot(it.x2 - it.x1, it.z2 - it.z1))
-      : `${fmtLen(it.w)}×${fmtLen(it.d)}×${fmtLen(it.h)}`;
-    el.addEventListener("click", ev => {
-      if (ev.target.classList.contains("b-del")) return;
-      selectedId = it.id;
-      rebuildHelperOnly();
-      renderPanels();
-      renderEditor();
-    });
-    el.querySelector(".b-del").addEventListener("click", () => {
-      b.interior = b.interior.filter(x => x.id !== it.id);
-      if (selectedId === it.id) selectedId = null;
-      changed();
-    });
-    list.appendChild(el);
+  // grouped by system, spaces before fixtures, walls last, alphabetical within
+  const rank = it => it.kind === "wall" ? 2 : it.space ? 0 : 1;
+  for (const sys of Object.keys(SYS_GROUPS)) {
+    const members = items.filter(it => (it.sys || "buildout") === sys)
+      .sort((a, c) => rank(a) - rank(c) || a.name.localeCompare(c.name));
+    if (!members.length) continue;
+    const head = document.createElement("div");
+    head.className = "sys-head";
+    head.innerHTML = `<span class="b-swatch"></span><span></span>`;
+    head.querySelector(".b-swatch").style.background = SYS_GROUPS[sys].color;
+    head.querySelector("span:last-child").textContent = `${SYS_GROUPS[sys].label} (${members.length})`;
+    list.appendChild(head);
+    for (const it of members) {
+      const el = document.createElement("div");
+      el.className = "b-item" + (it.id === selectedId ? " selected" : "");
+      el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
+      el.querySelector(".b-name").textContent =
+        (it.kind === "wall" ? "▭ " : it.space ? "▢ " : "") + it.name + (it.brand ? ` — ${it.brand}` : "");
+      el.querySelector(".b-dims").textContent = it.kind === "wall"
+        ? fmtLen(Math.hypot(it.x2 - it.x1, it.z2 - it.z1))
+        : `${fmtLen(it.w)}×${fmtLen(it.d)}×${fmtLen(it.h)}`;
+      el.addEventListener("click", ev => {
+        if (ev.target.classList.contains("b-del")) return;
+        selectedId = it.id;
+        rebuildHelperOnly();
+        renderPanels();
+        renderEditor();
+      });
+      el.querySelector(".b-del").addEventListener("click", () => {
+        b.interior = b.interior.filter(x => x.id !== it.id);
+        if (selectedId === it.id) selectedId = null;
+        changed();
+      });
+      list.appendChild(el);
+    }
   }
   const orphans = (b.interior || []).filter(i => i.floor > b.stories).length;
   if (orphans) {
@@ -507,10 +556,57 @@ function renderEditor() {
   setVal("nRot", Math.round(it.rot));
 }
 
+/* ---------------- project import (complete a saved shell here) ---------------- */
+function renderProjPick() {
+  const sel = $("inProjPick");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  const ph = document.createElement("option");
+  ph.value = "";
+  ph.textContent = "Import project from library…";
+  sel.appendChild(ph);
+  for (const p of bridge.listProjects()) {
+    const opt = document.createElement("option");
+    opt.value = p.name;
+    opt.textContent = `${p.name} (${p.buildings.length} bldg${p.buildings.length === 1 ? "" : "s"})`;
+    sel.appendChild(opt);
+  }
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+}
+function importProject(name) {
+  const p = bridge.listProjects().find(x => x.name === name);
+  if (!p) return;
+  if (state.buildings.length &&
+      !confirm(`Replace the current building with “${name}”? Shell and interior both come from the saved project.`)) return;
+  loadProject({ app: "render-lab", buildings: JSON.parse(JSON.stringify(p.buildings)) });
+  save();
+  // keep Studio's save/send flows pointed at the project now on deck —
+  // otherwise its stale name field silently overwrites the wrong project
+  const pn = document.getElementById("projName");
+  if (pn) pn.value = name;
+  selectedId = null;
+  setMode("idle");
+  activeFloor = 1;
+  const b = bld();
+  lastBuildingId = b ? b.id : null;
+  rebuildShell();
+  rebuildInterior();
+  applyClip();
+  if (b) frame();
+  shell.toast(`Imported “${name}” — complete the interior here`);
+}
+
 /* ---------------- wiring ---------------- */
 function wire() {
   renderPalette();
   bridge.onCatalogChanged(renderPalette);
+  renderProjPick();
+  bridge.onProjectsChanged(renderProjPick);
+  $("inProjLoadBtn").addEventListener("click", () => {
+    const name = $("inProjPick").value;
+    if (!name) { shell.toast("Pick a saved project to import"); return; }
+    importProject(name);
+  });
 
   // switching the palette while place mode is armed re-arms with the new pick
   $("inType").addEventListener("change", () => {
@@ -608,9 +704,11 @@ window.interiorLab = {
   get selectedId() { return selectedId; },
   sysVisible,
   scene, camera,
+  get controls() { return controls; },
   setRed(v) { redMode = v; rebuildInterior(); },
   rebuildInterior, rebuildShell,
   intGroup: () => intGroup,
+  helperBox: () => helperBox,
 };
 
 return {
