@@ -1,13 +1,15 @@
 /* =========================================================
-   Studio — 3D rendering lab: scene, interaction, panels.
+   Studio — shell & exterior design. One building per
+   project. Interiors live in the Interior tab; the shell
+   built here is what that tab (and Atlas/Earth) recognize.
    ========================================================= */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
-  state, FT, MATERIALS, OPENING_TYPES, FACES, FACE_LABELS, INTERIOR_TYPES,
+  state, FT, MATERIALS, OPENING_TYPES, FACES, FACE_LABELS,
   selectedBuilding, buildingById, openingById, makeBuilding, addOpening, addInterior,
-  removeBuilding, arrayOpenings, faceLength, wallHeight, totalHeight, floorBase,
-  fittedOpenings, openingFits, interiorOnFloor,
+  removeBuilding, arrayOpenings, faceLength, wallHeight, totalHeight,
+  fittedOpenings, openingFits,
   toUI, fromUI, unitSuffix, fmtLen,
   exportProject, loadProject, loadSaved, save, flushSave,
 } from "./state.js";
@@ -29,23 +31,8 @@ let pointer = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 let dragging = null;
 let editFace = "s";
-/* interior state */
-let activeFloor = 1;
-let insideView = false;
-let intMode = "idle";            // 'idle' | 'place' | 'wall'
-let intPlaceSpec = null;         // template for the item being placed
-let wallFirst = null;            // first click of a partition wall (local coords)
-let selectedInterior = null;     // interior id | null
-
-/* building-local <-> world (building may be moved/rotated) */
-function toLocal(b, wx, wz) {
-  const th = b.rot * Math.PI / 180;
-  const dx = wx - b.x, dz = wz - b.z;
-  return { x: dx * Math.cos(th) + dz * Math.sin(th), z: -dx * Math.sin(th) + dz * Math.cos(th) };
-}
-function interiorById(b, id) {
-  return b ? (b.interior || []).find(i => i.id === id) || null : null;
-}
+let loopFn = null;
+let loopOn = true;
 
 /* ---------------- scene ---------------- */
 function initScene() {
@@ -62,7 +49,7 @@ function initScene() {
   scene.background = new THREE.Color(0x0b0d10);
   scene.fog = new THREE.Fog(0x0b0d10, 320, 900);
 
-  camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2000); // near 0.5 keeps depth precision high
+  camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2000);
   camera.position.set(52, 34, 58);
 
   controls = new OrbitControls(camera, renderer.domElement);
@@ -126,19 +113,27 @@ function initScene() {
     camera.updateProjectionMatrix();
   }).observe(holder);
 
-  renderer.setAnimationLoop(() => {
+  loopFn = () => {
     controls.update();
     renderer.render(scene, camera);
-  });
+  };
+  renderer.setAnimationLoop(loopFn);
 }
 
-/* ---------------- rebuild ---------------- */
+/* the shell pauses hidden tabs so only the visible renderer draws */
+function setActive(v) {
+  if (v === loopOn) return;
+  loopOn = v;
+  renderer.setAnimationLoop(v ? loopFn : null);
+}
+
+/* ---------------- rebuild (shell only — interiors live in their tab) ---------------- */
 function rebuildBuilding(id) {
   const old = buildingGroups.get(id);
   if (old) { scene.remove(old); disposeGroup(old); buildingGroups.delete(id); }
   const b = buildingById(id);
   if (!b) { refreshHelpers(); return; }
-  const g = buildBuilding(b);
+  const g = buildBuilding(b, { withInterior: false });
   scene.add(g);
   buildingGroups.set(id, g);
   refreshHelpers();
@@ -147,7 +142,7 @@ function rebuildAll() {
   for (const [, g] of buildingGroups) { scene.remove(g); disposeGroup(g); }
   buildingGroups.clear();
   for (const b of state.buildings) {
-    const g = buildBuilding(b);
+    const g = buildBuilding(b, { withInterior: false });
     scene.add(g);
     buildingGroups.set(b.id, g);
   }
@@ -173,13 +168,6 @@ function refreshHelpers() {
   if (state.selectedOpening && state.selectedOpening.bId === b.id && g) {
     let target = null;
     g.traverse(o => { if (o.userData && o.userData.openingId === state.selectedOpening.oId && !target) target = o; });
-    if (target) {
-      openingBox = new THREE.BoxHelper(target, 0xffd166);
-      scene.add(openingBox);
-    }
-  } else if (selectedInterior && g) {
-    let target = null;
-    g.traverse(o => { if (o.userData && o.userData.interiorId === selectedInterior && !target) target = o; });
     if (target) {
       openingBox = new THREE.BoxHelper(target, 0xffd166);
       scene.add(openingBox);
@@ -226,93 +214,21 @@ function findOpeningId(obj) {
   }
   return null;
 }
-function findInteriorId(obj) {
-  let o = obj;
-  while (o) {
-    if (o.userData && o.userData.interiorId) return o.userData.interiorId;
-    o = o.parent;
-  }
-  return null;
-}
-function floorPlaneHit(b) {
-  const y = floorBase(b, activeFloor) + 0.13;
-  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -y);
-  const p = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(plane, p) ? p : null;
-}
-function applyClip() {
-  const b = selectedBuilding() || state.buildings[0];
-  if (insideView && b) {
-    const cutY = floorBase(b, activeFloor) + b.floorH * 0.9;
-    renderer.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, -1, 0), cutY)];
-  } else {
-    renderer.clippingPlanes = [];
-  }
-}
 
 function onPointerDown(e) {
   if (e.button !== 0 || dragging) return;
   setPointer(e);
-
-  // interior placement / wall drawing on the active floor
-  const bSel = selectedBuilding() || state.buildings[0];
-  if (intMode !== "idle" && bSel) {
-    const p = floorPlaneHit(bSel);
-    if (!p) return;
-    const l = toLocal(bSel, p.x, p.z);
-    const snap = state.units === "ft" ? FT / 2 : 0.25;
-    l.x = Math.round(l.x / snap) * snap;
-    l.z = Math.round(l.z / snap) * snap;
-    if (intMode === "place" && intPlaceSpec) {
-      const it = addInterior(bSel, { ...intPlaceSpec, kind: "item", floor: activeFloor, x: l.x, z: l.z });
-      selectedInterior = it.id;
-      setIntMode("idle");
-      changed(bSel.id);
-    } else if (intMode === "wall") {
-      if (!wallFirst) {
-        wallFirst = l;
-        toast("First corner set — click the wall's end point");
-      } else {
-        const it = addInterior(bSel, { kind: "wall", floor: activeFloor, name: "Partition",
-          x1: wallFirst.x, z1: wallFirst.z, x2: l.x, z2: l.z });
-        selectedInterior = it.id;
-        setIntMode("idle");
-        changed(bSel.id);
-      }
-    }
-    return;
-  }
-
   const hit = pick();
   if (hit) {
     state.selectedId = hit.buildingId;
     state.selectedOpening = hit.openingId ? { bId: hit.buildingId, oId: hit.openingId } : null;
-    selectedInterior = hit.interiorId || null;
     if (hit.openingId) {
       const b = buildingById(hit.buildingId);
       const o = openingById(b, hit.openingId);
       if (o) editFace = o.face;
     }
     const b = buildingById(hit.buildingId);
-    if (hit.interiorId) {
-      const it = interiorById(b, hit.interiorId);
-      if (it && it.kind === "item") {
-        activeFloor = it.floor;
-        const planeY = floorBase(b, it.floor) + 0.13;
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
-        const p = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(plane, p)) {
-          const l = toLocal(b, p.x, p.z);
-          let meshRef = null;
-          const g = buildingGroups.get(b.id);
-          g?.traverse(o => { if (!meshRef && o.userData?.interiorId === it.id && o.geometry?.type === "BoxGeometry" && o.parent === g) meshRef = o; });
-          dragging = { interiorId: it.id, bId: b.id, pointerId: e.pointerId,
-            offX: it.x - l.x, offZ: it.z - l.z, planeY, meshRef, moved: false };
-          try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-          controls.enabled = false;
-        }
-      }
-    } else if (!hit.openingId) {
+    if (!hit.openingId) {
       const p = groundHit();
       if (p) {
         dragging = { id: b.id, pointerId: e.pointerId, offX: b.x - p.x, offZ: b.z - p.z, moved: false };
@@ -328,10 +244,9 @@ function onPointerDown(e) {
       dragging = { humanDrag: true, pointerId: e.pointerId };
       try { renderer.domElement.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
       controls.enabled = false;
-    } else if (state.selectedId !== null || state.selectedOpening || selectedInterior) {
+    } else if (state.selectedId !== null || state.selectedOpening) {
       state.selectedId = null;
       state.selectedOpening = null;
-      selectedInterior = null;
       renderPanels();
       refreshHelpers();
     }
@@ -340,29 +255,9 @@ function onPointerDown(e) {
 function onPointerMove(e) {
   if (!dragging || e.pointerId !== dragging.pointerId) return;
   setPointer(e);
-  if (dragging.humanDrag) {
-    const p = groundHit();
-    if (p) human.position.set(p.x, 0, p.z);
-    return;
-  }
-  if (dragging.interiorId) {
-    const b = buildingById(dragging.bId);
-    const it = interiorById(b, dragging.interiorId);
-    if (!b || !it) { dragging = null; controls.enabled = true; return; }
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -dragging.planeY);
-    const p = new THREE.Vector3();
-    if (!raycaster.ray.intersectPlane(plane, p)) return;
-    const l = toLocal(b, p.x, p.z);
-    const snap = state.units === "ft" ? FT / 4 : 0.1;
-    it.x = Math.round((l.x + dragging.offX) / snap) * snap;
-    it.z = Math.round((l.z + dragging.offZ) / snap) * snap;
-    dragging.moved = true;
-    if (dragging.meshRef) dragging.meshRef.position.set(it.x, floorBase(b, it.floor) + 0.13 + it.h / 2, it.z);
-    if (openingBox) openingBox.update();
-    return;
-  }
   const p = groundHit();
   if (!p) return;
+  if (dragging.humanDrag) { human.position.set(p.x, 0, p.z); return; }
   const b = buildingById(dragging.id);
   if (!b) { dragging = null; controls.enabled = true; return; }
   const snap = state.units === "ft" ? FT : 0.5;
@@ -375,43 +270,19 @@ function onPointerMove(e) {
 }
 function onPointerUp(e) {
   if (dragging && e && e.pointerId !== dragging.pointerId) return;
-  if (dragging && !dragging.humanDrag && dragging.moved) {
-    if (dragging.interiorId) renderInteriorPanel();
-    save();
-  }
+  if (dragging && !dragging.humanDrag && dragging.moved) save();
   dragging = null;
   controls.enabled = true;
 }
 
 window.addEventListener("keydown", e => {
-  if (shell.getTab() !== "studio") return; // Atlas owns the keyboard on its tab
+  if (shell.getTab() !== "studio") return;
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-  if (e.key === "Escape" && intMode !== "idle") { setIntMode("idle"); e.preventDefault(); return; }
   const b = selectedBuilding();
   if (!b) return;
-  const it = selectedInterior ? interiorById(b, selectedInterior) : null;
   const step = (e.shiftKey ? 5 : 1) * (state.units === "ft" ? FT : 0.5);
   let handled = true;
-  if (it && it.kind === "item") {
-    switch (e.key) {
-      case "ArrowUp": it.z -= step; break;
-      case "ArrowDown": it.z += step; break;
-      case "ArrowLeft": it.x -= step; break;
-      case "ArrowRight": it.x += step; break;
-      case "q": case "Q": it.rot = (it.rot - (e.shiftKey ? 1 : 15) + 360) % 360; break;
-      case "e": case "E": it.rot = (it.rot + (e.shiftKey ? 1 : 15)) % 360; break;
-      case "Delete": case "Backspace":
-        b.interior = b.interior.filter(x => x.id !== it.id);
-        selectedInterior = null;
-        changed(b.id);
-        e.preventDefault(); e.stopPropagation();
-        return;
-      default: handled = false;
-    }
-    if (handled) { e.preventDefault(); e.stopPropagation(); changed(b.id); }
-    return;
-  }
   switch (e.key) {
     case "ArrowUp": b.z -= step; break;
     case "ArrowDown": b.z += step; break;
@@ -424,10 +295,6 @@ window.addEventListener("keydown", e => {
         const bb = buildingById(state.selectedOpening.bId);
         if (bb) bb.openings = bb.openings.filter(o => o.id !== state.selectedOpening.oId);
         state.selectedOpening = null;
-        changed(b.id);
-      } else if (selectedInterior) {
-        b.interior = b.interior.filter(x => x.id !== selectedInterior);
-        selectedInterior = null;
         changed(b.id);
       } else {
         removeBuilding(b.id);
@@ -454,12 +321,6 @@ function changed(id) {
   save();
 }
 function changedAll() {
-  if (!state.buildings.length) {
-    insideView = false;
-    $("lookInsideBtn").classList.remove("active");
-    setIntMode("idle");
-  }
-  applyClip(); // never leave a stale clip plane after structural changes
   rebuildAll();
   renderPanels();
   save();
@@ -467,38 +328,16 @@ function changedAll() {
 
 /* ---------------- panels ---------------- */
 function renderPanels() {
-  // single-building mode: the one building is always the selection
   if (state.buildings.length && !selectedBuilding()) state.selectedId = state.buildings[0].id;
   renderBuildingList();
   renderSelected();
   renderOpenings();
-  renderInteriorPanel();
 }
 
 function renderBuildingList() {
   const list = $("buildingList");
+  if (!list) return;
   list.innerHTML = "";
-  if (!state.buildings.length) {
-    list.innerHTML = `<div class="empty-note">No buildings yet — start from an asset template above.</div>`;
-    return;
-  }
-  for (const b of state.buildings) {
-    const el = document.createElement("div");
-    el.className = "b-item" + (b.id === state.selectedId ? " selected" : "");
-    el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
-    el.querySelector(".b-name").textContent = `${TEMPLATES[b.assetType]?.icon || "🏗️"} ${b.name}`;
-    el.querySelector(".b-dims").textContent = `${fmtLen(b.plan.w)} × ${fmtLen(b.plan.d)}`;
-    el.addEventListener("click", ev => {
-      if (ev.target.classList.contains("b-del")) return;
-      state.selectedId = b.id;
-      state.selectedOpening = null;
-      controls.target.set(b.x, totalHeight(b) / 2, b.z);
-      renderPanels();
-      refreshHelpers();
-    });
-    el.querySelector(".b-del").addEventListener("click", () => { removeBuilding(b.id); changedAll(); });
-    list.appendChild(el);
-  }
 }
 
 const setVal = (id, v) => {
@@ -535,7 +374,7 @@ function renderOpenings() {
   const b = selectedBuilding();
   if (!b) { sec.style.display = "none"; return; }
   sec.style.display = "";
-  document.querySelectorAll("[data-face]").forEach(btn =>
+  document.querySelectorAll("#openingsSection [data-face]").forEach(btn =>
     btn.classList.toggle("active", btn.dataset.face === editFace));
   $("faceInfo").textContent =
     `${FACE_LABELS[editFace]} — ${fmtLen(faceLength(b, editFace))} long, ${fmtLen(wallHeight(b, editFace))} tall`;
@@ -567,7 +406,6 @@ function renderOpenings() {
     list.appendChild(el);
   }
 
-  // selected opening editor
   const oSec = $("openingEditor");
   const sel = state.selectedOpening ? openingById(b, state.selectedOpening.oId) : null;
   if (!sel || sel.face !== editFace) { oSec.style.display = "none"; return; }
@@ -579,109 +417,8 @@ function renderOpenings() {
   setVal("oU", round2(toUI(sel.u)));
 }
 
-/* ---------------- interior panel ---------------- */
-function setIntMode(next, spec = null) {
-  intMode = next;
-  intPlaceSpec = spec || intPlaceSpec;
-  wallFirst = null;
-  renderer.domElement.style.cursor = next === "idle" ? "" : "crosshair";
-  $("intPlaceBtn").classList.toggle("active", next === "place");
-  $("intWallBtn").classList.toggle("active", next === "wall");
-}
-
-function paletteEntries() {
-  const out = Object.entries(INTERIOR_TYPES).map(([key, t]) => ({
-    value: "std:" + key, label: t.label, spec: { name: t.label, type: key, w: t.w, d: t.d, h: t.h, color: t.color },
-  }));
-  bridge.getCatalog().forEach((row, i) => {
-    if (row.kind !== "equipment") return;
-    out.push({
-      value: "cat:" + i,
-      label: row.name + (row.brand ? ` — ${row.brand}` : ""),
-      spec: { name: row.name, brand: row.brand, type: row.type || "custom", w: row.w, d: row.d, h: row.h, color: row.color },
-    });
-  });
-  return out;
-}
-function renderInteriorPalette() {
-  const sel = $("intType");
-  const prev = sel.value;
-  sel.innerHTML = "";
-  for (const e of paletteEntries()) {
-    const opt = document.createElement("option");
-    opt.value = e.value;
-    opt.textContent = e.label;
-    sel.appendChild(opt);
-  }
-  if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
-}
-
-function renderInteriorPanel() {
-  const sec = $("interiorSection");
-  const b = selectedBuilding();
-  if (!b) { sec.style.display = "none"; return; }
-  sec.style.display = "";
-  // floor chips
-  activeFloor = Math.min(activeFloor, b.stories);
-  const chips = $("floorChips");
-  chips.innerHTML = "";
-  for (let f = 1; f <= Math.min(b.stories, 10); f++) {
-    const btn = document.createElement("button");
-    btn.textContent = f;
-    btn.classList.toggle("active", f === activeFloor);
-    btn.addEventListener("click", () => {
-      activeFloor = f;
-      applyClip();
-      renderInteriorPanel();
-      refreshHelpers();
-    });
-    chips.appendChild(btn);
-  }
-  $("lookInsideBtn").classList.toggle("active", insideView);
-
-  // items on the active floor
-  const list = $("intList");
-  list.innerHTML = "";
-  const items = interiorOnFloor(b, activeFloor);
-  if (!items.length) {
-    list.innerHTML = `<div class="empty-note">Nothing on floor ${activeFloor} yet.</div>`;
-  }
-  for (const it of items) {
-    const el = document.createElement("div");
-    el.className = "b-item" + (it.id === selectedInterior ? " selected" : "");
-    el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
-    el.querySelector(".b-name").textContent = (it.kind === "wall" ? "▭ " : "") + it.name + (it.brand ? ` — ${it.brand}` : "");
-    el.querySelector(".b-dims").textContent = it.kind === "wall"
-      ? fmtLen(Math.hypot(it.x2 - it.x1, it.z2 - it.z1))
-      : `${fmtLen(it.w)}×${fmtLen(it.d)}×${fmtLen(it.h)}`;
-    el.addEventListener("click", ev => {
-      if (ev.target.classList.contains("b-del")) return;
-      selectedInterior = it.id;
-      state.selectedOpening = null;
-      renderPanels();
-      refreshHelpers();
-    });
-    el.querySelector(".b-del").addEventListener("click", () => {
-      b.interior = b.interior.filter(x => x.id !== it.id);
-      if (selectedInterior === it.id) selectedInterior = null;
-      changed(b.id);
-    });
-    list.appendChild(el);
-  }
-
-  // selected item editor
-  const ed = $("intEditor");
-  const sel = selectedInterior ? interiorById(b, selectedInterior) : null;
-  if (!sel || sel.kind !== "item") { ed.style.display = "none"; return; }
-  ed.style.display = "";
-  $("intSelName").textContent = sel.name + (sel.brand ? ` — ${sel.brand}` : "");
-  setVal("iW", round2(toUI(sel.w)));
-  setVal("iD", round2(toUI(sel.d)));
-  setVal("iH", round2(toUI(sel.h)));
-  setVal("iRot", Math.round(sel.rot));
-}
-
 /* ---------------- catalog panel ---------------- */
+let catManageOpen = false;
 function renderCatalogPanel() {
   const holder = $("catList");
   holder.innerHTML = "";
@@ -690,23 +427,43 @@ function renderCatalogPanel() {
     holder.innerHTML = `<div class="empty-note">No custom data yet — upload a CSV of your equipment, window/door products, and building presets.</div>`;
     return;
   }
+  const byKind = { equipment: 0, opening: 0, preset: 0 };
+  rows.forEach(r => { byKind[r.kind] = (byKind[r.kind] || 0) + 1; });
+  const summary = document.createElement("div");
+  summary.className = "empty-note";
+  summary.textContent = `${rows.length} entries — 🔧 ${byKind.equipment || 0} equipment · 🪟 ${byKind.opening || 0} openings · 🏢 ${byKind.preset || 0} presets`;
+  holder.appendChild(summary);
+  const KIND_ICON = { equipment: "🔧", opening: "🪟", preset: "🏢" };
+  const det = document.createElement("details");
+  det.open = catManageOpen;
+  det.addEventListener("toggle", () => { catManageOpen = det.open; });
+  const sum = document.createElement("summary");
+  sum.textContent = "Manage entries";
+  det.appendChild(sum);
+  const box = document.createElement("div");
+  box.className = "cat-rows";
   rows.forEach((row, i) => {
     const el = document.createElement("div");
     el.className = "b-item";
     el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="b-del">✕</button>`;
-    el.querySelector(".b-name").textContent =
-      `${row.kind === "equipment" ? "🔧" : row.kind === "opening" ? "🪟" : "🏢"} ${row.name}${row.brand ? " — " + row.brand : ""}`;
-    el.querySelector(".b-dims").textContent = row.kind === "preset"
-      ? `${fmtLen(row.w)}×${fmtLen(row.d)}·${row.stories}st`
-      : row.kind === "opening" ? `${fmtLen(row.w)}×${fmtLen(row.h)}` : `${fmtLen(row.w)}×${fmtLen(row.d)}×${fmtLen(row.h)}`;
+    el.querySelector(".b-name").textContent = `${KIND_ICON[row.kind] || "•"} ${row.name}${row.brand ? " — " + row.brand : ""}`;
+    el.querySelector(".b-dims").textContent = row.kind;
     el.querySelector(".b-del").addEventListener("click", () => bridge.removeCatalogRow(i));
-    holder.appendChild(el);
+    box.appendChild(el);
   });
+  det.appendChild(box);
+  holder.appendChild(det);
+  const clearBtn = document.createElement("button");
+  clearBtn.className = "danger wide";
+  clearBtn.textContent = "Remove all catalog data";
+  clearBtn.addEventListener("click", () => {
+    if (confirm("Remove every uploaded catalog entry?")) bridge.setCatalog([]);
+  });
+  holder.appendChild(clearBtn);
 }
 function catalogChanged() {
-  renderInteriorPalette();
   renderOpeningTypeOptions();
-  renderTemplates();
+  renderTemplatePicker();
   renderCatalogPanel();
 }
 
@@ -715,19 +472,29 @@ function renderOpeningTypeOptions() {
   const sel = $("addType");
   const prev = sel.value;
   sel.innerHTML = "";
+  const og1 = document.createElement("optgroup");
+  og1.label = "Standard types";
   for (const [key, t] of Object.entries(OPENING_TYPES)) {
     const opt = document.createElement("option");
     opt.value = key;
     opt.textContent = t.label;
-    sel.appendChild(opt);
+    og1.appendChild(opt);
   }
-  bridge.getCatalog().forEach((row, i) => {
-    if (row.kind !== "opening") return;
-    const opt = document.createElement("option");
-    opt.value = "cat:" + i;
-    opt.textContent = `${row.name}${row.brand ? " — " + row.brand : ""} (${fmtLen(row.w)}×${fmtLen(row.h)})`;
-    sel.appendChild(opt);
-  });
+  sel.appendChild(og1);
+  const catRows = bridge.getCatalog();
+  const hasProducts = catRows.some(r => r.kind === "opening");
+  if (hasProducts) {
+    const og2 = document.createElement("optgroup");
+    og2.label = "Your products";
+    catRows.forEach((row, i) => {
+      if (row.kind !== "opening") return;
+      const opt = document.createElement("option");
+      opt.value = "cat:" + i;
+      opt.textContent = `${row.name}${row.brand ? " — " + row.brand : ""} (${fmtLen(row.w)}×${fmtLen(row.h)})`;
+      og2.appendChild(opt);
+    });
+    sel.appendChild(og2);
+  }
   if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
 }
 function resolveOpeningChoice(value) {
@@ -742,50 +509,97 @@ function resolveOpeningChoice(value) {
   return { type: value };
 }
 
-/* templates grid: built-ins + catalog presets; one building per project */
+/* ---------------- template picker (asset dropdown → presets) ---------------- */
+const ASSET_FILTERS = [
+  { value: "multifamily", label: "Multifamily", match: ["multifamily", "mf", "apartment", "apartments", "residential", "condo", "condos", "student housing", "senior housing"] },
+  { value: "retail", label: "Retail", match: ["retail", "strip", "strip center", "shopping", "shopping center", "store", "grocery", "restaurant"] },
+  { value: "office", label: "Office", match: ["office", "medical office", "creative office"] },
+  { value: "industrial", label: "Industrial", match: ["industrial", "warehouse", "flex", "logistics", "distribution", "manufacturing", "cold storage"] },
+  { value: "datacenter", label: "Data Center", match: ["datacenter", "data center", "data-center", "dc"] },
+];
+/* every uploaded preset stays reachable: unrecognized types land in "Other uploads" */
+function assetForPresetRow(row) {
+  const t = (row.type || "").toLowerCase().trim();
+  const hit = ASSET_FILTERS.find(a => a.match.includes(t));
+  return hit ? hit.value : "other";
+}
+
 function startBuilding(spec) {
   if (state.buildings.length &&
       !confirm(`Replace the current building with “${spec.name}”? (Save the project first if you want to keep it.)`)) return;
   for (const old of [...state.buildings]) removeBuilding(old.id);
   makeBuilding({ ...spec, x: 0, z: 0 });
-  activeFloor = 1;
-  selectedInterior = null;
   editFace = "s";
-  applyClip();
   changedAll();
   frameSelected();
 }
-function renderTemplates() {
-  const holder = $("templateGrid");
-  holder.innerHTML = "";
-  for (const [, t] of Object.entries(TEMPLATES)) {
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span class="t-icon">${t.icon}</span>${t.label}`;
-    btn.addEventListener("click", () => startBuilding(t.make()));
-    holder.appendChild(btn);
-  }
-  bridge.getCatalog().forEach(row => {
+
+function presetOptionsFor(assetValue) {
+  const out = [];
+  const builtin = TEMPLATES[assetValue];
+  if (builtin) out.push({ value: "std", label: `${builtin.icon} Standard ${builtin.label} template` });
+  bridge.getCatalog().forEach((row, i) => {
     if (row.kind !== "preset") return;
-    const btn = document.createElement("button");
-    btn.innerHTML = `<span class="t-icon">📦</span>`;
-    btn.appendChild(document.createTextNode(row.name));
-    btn.title = row.brand || "";
-    btn.addEventListener("click", () => startBuilding({
-      name: row.name, assetType: row.type || "custom",
-      plan: { w: row.w, d: row.d }, stories: row.stories, floorH: row.floorH,
-      parapet: row.parapet, material: MATERIALS[row.material] ? row.material : "concrete",
-    }));
-    holder.appendChild(btn);
+    if (assetForPresetRow(row) !== assetValue) return;
+    out.push({ value: "cat:" + i, label: `📦 ${row.name}${row.brand ? " — " + row.brand : ""}` });
+  });
+  return out;
+}
+function renderTemplatePicker() {
+  const asset = $("assetFilter");
+  const prevAsset = asset.value || "industrial";
+  const entries = ASSET_FILTERS.map(a => ({ value: a.value, label: a.label }));
+  if (bridge.getCatalog().some(r => r.kind === "preset" && assetForPresetRow(r) === "other"))
+    entries.push({ value: "other", label: "Other uploads" });
+  asset.innerHTML = "";
+  for (const a of entries) {
+    const opt = document.createElement("option");
+    opt.value = a.value;
+    opt.textContent = a.label;
+    asset.appendChild(opt);
+  }
+  asset.value = entries.some(e => e.value === prevAsset) ? prevAsset : "industrial";
+  const pick = $("presetPick");
+  const prev = pick.value;
+  pick.innerHTML = "";
+  for (const o of presetOptionsFor(asset.value)) {
+    const opt = document.createElement("option");
+    opt.value = o.value;
+    opt.textContent = o.label;
+    pick.appendChild(opt);
+  }
+  if ([...pick.options].some(o => o.value === prev)) pick.value = prev;
+  $("presetCount").textContent = `${pick.options.length} option${pick.options.length === 1 ? "" : "s"}`;
+}
+function wireTemplatePicker() {
+  renderTemplatePicker();
+  $("assetFilter").addEventListener("change", renderTemplatePicker);
+  $("startBtn").addEventListener("click", () => {
+    const asset = $("assetFilter").value;
+    const choice = $("presetPick").value;
+    if (choice === "std") {
+      const t = TEMPLATES[asset];
+      if (t) startBuilding(t.make());
+      return;
+    }
+    if (choice.startsWith("cat:")) {
+      const row = bridge.getCatalog()[parseInt(choice.slice(4), 10)];
+      if (!row || row.kind !== "preset") return;
+      startBuilding({
+        name: row.name, assetType: row.type || "custom",
+        plan: { w: row.w, d: row.d }, stories: row.stories, floorH: row.floorH,
+        parapet: row.parapet, material: MATERIALS[row.material] ? row.material : "concrete",
+      });
+    }
   });
 }
 
 /* ---------------- panel wiring ---------------- */
 function wirePanels() {
-  renderTemplates();
+  wireTemplatePicker();
   $("bDup").style.display = "none"; // one building per project
 
-  // building fields
-  $("bName").addEventListener("input", () => { const b = selectedBuilding(); if (b) { b.name = $("bName").value; renderBuildingList(); save(); } });
+  $("bName").addEventListener("input", () => { const b = selectedBuilding(); if (b) { b.name = $("bName").value; save(); } });
   const numField = (id, apply) => {
     $(id).addEventListener("input", () => {
       const b = selectedBuilding();
@@ -813,20 +627,10 @@ function wirePanels() {
       save();
     }
   });
-  $("bDup").addEventListener("click", () => {
-    const b = selectedBuilding();
-    if (!b) return;
-    const copy = JSON.parse(JSON.stringify(b));
-    copy.name += " copy";
-    copy.x = b.x + b.plan.w + 5;
-    delete copy.id;
-    makeBuilding(copy); // re-adds openings with fresh ids
-    changedAll();
-  });
   $("bDel").addEventListener("click", () => { const b = selectedBuilding(); if (b) { removeBuilding(b.id); changedAll(); } });
 
   // faces
-  document.querySelectorAll("[data-face]").forEach(btn =>
+  document.querySelectorAll("#openingsSection [data-face]").forEach(btn =>
     btn.addEventListener("click", () => {
       editFace = btn.dataset.face;
       state.selectedOpening = null;
@@ -844,7 +648,6 @@ function wirePanels() {
     const t = OPENING_TYPES[choice.type];
     const w = choice.w ?? t.w, h = choice.h ?? t.h, sill = choice.sill ?? t.sill;
     const L = faceLength(b, editFace);
-    // march the whole face for a free slot
     const { ok } = fittedOpenings(b, editFace);
     let u = w / 2 + 0.6, found = false;
     while (u <= L - w / 2 - 0.3) {
@@ -864,7 +667,7 @@ function wirePanels() {
     if (!Number.isFinite(n) || n < 1) return;
     const choice = resolveOpeningChoice(typeSel.value);
     const made = arrayOpenings(b, editFace, choice.type, Math.min(n, 60), choice);
-    if (choice.label && made > 0) { // slice(-0) would label every opening
+    if (choice.label && made > 0) {
       for (const o of b.openings.slice(-made)) o.label = choice.label;
     }
     changed(b.id);
@@ -877,7 +680,7 @@ function wirePanels() {
     changed(b.id);
   });
 
-  // opening editor (base types only — catalog products resolve to a base type)
+  // opening editor (base types only)
   for (const [key, t] of Object.entries(OPENING_TYPES)) {
     const opt = document.createElement("option");
     opt.value = key;
@@ -915,55 +718,7 @@ function wirePanels() {
     }
   });
 
-  // interior
-  renderInteriorPalette();
-  $("intPlaceBtn").addEventListener("click", () => {
-    if (intMode === "place") { setIntMode("idle"); return; }
-    const entry = paletteEntries().find(x => x.value === $("intType").value);
-    if (!entry) return;
-    setIntMode("place", entry.spec);
-    toast(`Click the floor to place “${entry.spec.name}” (Esc to cancel)`);
-  });
-  $("intWallBtn").addEventListener("click", () => {
-    if (intMode === "wall") { setIntMode("idle"); return; }
-    setIntMode("wall");
-    toast("Partition wall: click the start point, then the end point (Esc to cancel)");
-  });
-  $("lookInsideBtn").addEventListener("click", () => {
-    insideView = !insideView;
-    $("lookInsideBtn").classList.toggle("active", insideView);
-    applyClip();
-    if (insideView) {
-      const b = selectedBuilding();
-      if (b) { // tilt down into the opened floor
-        const r = Math.max(b.plan.w, b.plan.d);
-        camera.position.set(b.x + r * 0.55, floorBase(b, activeFloor) + r * 0.85, b.z + r * 0.7);
-        controls.target.set(b.x, floorBase(b, activeFloor) + 1, b.z);
-      }
-    }
-  });
-  const intField = (id, key) => {
-    $(id).addEventListener("input", () => {
-      const b = selectedBuilding();
-      const it = selectedInterior ? interiorById(b, selectedInterior) : null;
-      const v = parseFloat($(id).value);
-      if (!it || it.kind !== "item" || !Number.isFinite(v)) return;
-      if (key === "rot") it.rot = ((v % 360) + 360) % 360;
-      else if (v > 0.02) it[key] = fromUI(v);
-      changed(b.id);
-    });
-  };
-  intField("iW", "w"); intField("iD", "d"); intField("iH", "h"); intField("iRot", "rot");
-  $("intDelBtn").addEventListener("click", () => {
-    const b = selectedBuilding();
-    if (b && selectedInterior) {
-      b.interior = b.interior.filter(x => x.id !== selectedInterior);
-      selectedInterior = null;
-      changed(b.id);
-    }
-  });
-
-  // catalog
+  // catalog (shared store — feeds Studio pickers AND the Interior tab)
   renderCatalogPanel();
   bridge.onCatalogChanged(catalogChanged);
   $("catUploadBtn").addEventListener("click", () => $("catFile").click());
@@ -1063,7 +818,7 @@ function wirePanels() {
   });
   $("clearBtn").addEventListener("click", () => {
     if (!state.buildings.length) return;
-    if (!confirm("Remove all buildings?")) return;
+    if (!confirm("Remove the current building?")) return;
     state.buildings = [];
     state.selectedId = null;
     state.selectedOpening = null;
@@ -1085,12 +840,10 @@ function setUnits(u) {
   $("unitFt").classList.toggle("active", u === "ft");
   $("unitM").classList.toggle("active", u === "m");
   renderPanels();
-  refreshHelpers(); // dimension labels re-render in new units
-  if (dimsGroup) { /* rebuilt in refreshHelpers */ }
+  refreshHelpers();
   save();
 }
 
-/* ---------------- toast (shared shell timer) ---------------- */
 function toast(msg) { shell.toast(msg); }
 
 /* ---------------- boot ---------------- */
@@ -1122,7 +875,6 @@ function renderProjLib() {
     el.querySelector(".b-dims").textContent = `${p.buildings.length} bldg${p.buildings.length === 1 ? "" : "s"}`;
     el.querySelector(".load").addEventListener("click", () => {
       if (state.buildings.length && !confirm(`Replace the current work with “${p.name}”?`)) return;
-      // deep-copy so live edits never alias the library entry
       loadProject({ app: "render-lab", buildings: JSON.parse(JSON.stringify(p.buildings)) });
       setUnits(state.units);
       changedAll();
@@ -1149,7 +901,7 @@ function uniqueName(base) {
 function resolveProjectName({ confirmOverwrite }) {
   let name = $("projName").value.trim();
   if (!name) {
-    name = uniqueName("Untitled project"); // never silently clobber the last unnamed save
+    name = uniqueName("Untitled project");
   } else if (confirmOverwrite && bridge.listProjects().some(p => p.name === name)) {
     if (!confirm(`Overwrite the existing project “${name}”?`)) return null;
   }
@@ -1165,9 +917,9 @@ $("projSaveBtn").addEventListener("click", () => {
 });
 $("sendToMapBtn").addEventListener("click", () => {
   if (!state.buildings.length) { toast("Design a building first"); return; }
-  const name = resolveProjectName({ confirmOverwrite: false }); // re-sending same name = update
+  const name = resolveProjectName({ confirmOverwrite: false });
   if (!name) return;
-  bridge.saveProject(name, state.buildings); // placing implies saving
+  bridge.saveProject(name, state.buildings);
   shell.requestPlacement({ name, massing: bridge.massing(state.buildings) });
 });
 
@@ -1176,9 +928,15 @@ window.lab = {
   state, makeBuilding, addOpening, addInterior, removeBuilding, arrayOpenings,
   rebuildAll, buildingGroups, scene, camera, controls,
   get renderer() { return renderer; },
+  get loopOn() { return loopOn; },
   exportProject, loadProject, frameSelected, setUnits,
   fittedOpenings, faceLength, wallHeight, totalHeight,
   bridge, startBuilding,
+};
+
+return {
+  refresh() { rebuildAll(); renderPanels(); }, // shell may change while on other tabs
+  setActive,
 };
 
 } // end initStudio

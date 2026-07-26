@@ -62,6 +62,28 @@ export function interiorOnFloor(b, floor) {
   return (b.interior || []).filter(it => it.floor === floor);
 }
 
+/* ---------------- Building-system classification ----------------
+   Every interior element belongs to one system group; used by the
+   Interior tab for show/hide and the red systems-overlay view. */
+export const SYS_GROUPS = {
+  power:    { label: "Power",    color: "#e4b34a" },
+  mep:      { label: "MEP",      color: "#5ad7d2" },
+  utility:  { label: "Utility",  color: "#c0c8d0" },
+  buildout: { label: "Buildout", color: "#9a8cff" },
+};
+const SYS_KEYWORDS = [
+  ["power", /transformer|switchgear|switchboard|\bups\b|\bpdu\b|generator|genset|panel|busway|\bats\b|battery|bess|solar|\bpv\b|inverter|\bev\b|charg|meter|electrical|substation|\brpp\b/],
+  ["mep", /crac|crah|\brtu\b|rooftop unit|chiller|\bahu\b|air handler|boiler|\bvrf\b|\bvrv\b|cooling|cool|condens|fan|hvac|\bmau\b|\bdoas\b|duct|exhaust|split system|heat pump|dry cooler|in-row|inrow|rear-door/],
+  ["utility", /water heater|booster|backflow|fire pump|riser|sprinkler|grease|interceptor|gas |compress|air compressor|\bro\b|process water|pump|tank|compactor/],
+];
+export function classifySys(text) {
+  const t = (text || "").toLowerCase();
+  for (const [sys, re] of SYS_KEYWORDS) {
+    if (re.test(t)) return sys;
+  }
+  return "buildout";
+}
+
 /* ---------------- State ---------------- */
 export const state = {
   units: "ft",
@@ -183,11 +205,13 @@ export function addInterior(b, spec) {
     it.x1 = spec.x1 ?? 0; it.z1 = spec.z1 ?? 0;
     it.x2 = spec.x2 ?? 1; it.z2 = spec.z2 ?? 0;
     it.t = spec.t || 0.12;
+    it.sys = "buildout";
   } else {
     it.x = spec.x ?? 0; it.z = spec.z ?? 0; it.rot = spec.rot || 0;
     it.w = spec.w || 1; it.d = spec.d || 1; it.h = spec.h || 1;
     it.type = spec.type || "";
     it.brand = spec.brand || "";
+    it.sys = SYS_GROUPS[spec.sys] ? spec.sys : classifySys(`${it.type} ${it.name}`);
   }
   b.interior.push(it);
   return it;
@@ -264,10 +288,12 @@ export function validBuilding(b) {
     if (it.kind === "wall") {
       if (![it.x1, it.z1, it.x2, it.z2].every(Number.isFinite)) return false;
       if (!Number.isFinite(it.t) || it.t <= 0) it.t = 0.12;
+      it.sys = "buildout";
       return true;
     }
     it.kind = "item";
     if (!Number.isFinite(it.rot)) it.rot = 0;
+    if (!SYS_GROUPS[it.sys]) it.sys = classifySys(`${it.type} ${it.name}`);
     return [it.x, it.z].every(Number.isFinite) &&
       Number.isFinite(it.w) && it.w > 0 &&
       Number.isFinite(it.d) && it.d > 0 &&

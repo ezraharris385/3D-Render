@@ -4,12 +4,15 @@
    visible container).
    ========================================================= */
 import { initStudio } from "../lab/js/app.js";
+import { initInterior } from "../lab/js/interior.js";
 import { initAtlas } from "../map/js/app.js";
 import { initEarth } from "./earth.js";
 
 const $ = id => document.getElementById(id);
 
 let tab = "studio";
+let studioApi = null;
+let interiorApi = null;
 let atlasApi = null;
 let earthApi = null;
 let pendingPlacement = null;
@@ -41,11 +44,20 @@ const shell = {
 function switchTab(next) {
   tab = next;
   $("tabStudio").classList.toggle("active", tab === "studio");
+  $("tabInterior").classList.toggle("active", tab === "interior");
   $("tabAtlas").classList.toggle("active", tab === "atlas");
   $("tabEarth").classList.toggle("active", tab === "earth");
   $("labRoot").style.display = tab === "studio" ? "" : "none";
+  $("interiorRoot").style.display = tab === "interior" ? "" : "none";
   $("mapRoot").style.display = tab === "atlas" ? "" : "none";
   $("earthRoot").style.display = tab === "earth" ? "" : "none";
+  if (tab === "interior") {
+    if (!interiorApi) interiorApi = initInterior(shell);
+    else interiorApi.activate();
+  }
+  // only the visible three.js renderer keeps its animation loop running
+  if (studioApi) studioApi.setActive(tab === "studio");
+  if (interiorApi) interiorApi.setActive(tab === "interior");
   if (tab === "atlas") {
     if (!atlasApi) {
       atlasApi = initAtlas(shell);
@@ -63,6 +75,7 @@ function switchTab(next) {
 }
 
 $("tabStudio").addEventListener("click", () => switchTab("studio"));
+$("tabInterior").addEventListener("click", () => switchTab("interior"));
 $("tabAtlas").addEventListener("click", () => switchTab("atlas"));
 $("tabEarth").addEventListener("click", () => switchTab("earth"));
 
@@ -70,7 +83,7 @@ $("tabEarth").addEventListener("click", () => switchTab("earth"));
 ["dragover", "drop"].forEach(evt =>
   document.addEventListener(evt, e => e.preventDefault()));
 
-initStudio(shell);
+studioApi = initStudio(shell);
 if (location.hash === "#atlas") switchTab("atlas");
 
 window.shell = shell;

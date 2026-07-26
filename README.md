@@ -1,19 +1,63 @@
-# 3D Render Engine — Studio + Atlas
+# 3D Render Engine — Studio · Interior · Atlas · Earth
 
-**One engine, two tabs.** Design true-dimension buildings in **🏗️ Studio**, save them as projects, then switch to **🛰️ Atlas** and place them on the satellite map — where they render at real scale alongside Atlas's full mapping feature set. Desktop-only, static files, no build step, **no API keys required**.
+**One engine, four tabs.** Design a true-dimension building shell in **🏗️ Studio**, fit out its **🔧 Interior** — power, utility, and MEP systems with a red systems-overlay view — then place the project at real scale on the **🛰️ Atlas** satellite map, or fly it in photorealistic **🌍 Earth**. Desktop-only, static files, no build step, **no API keys required** (Earth is the one opt-in exception).
 
 ## The workflow
 
-1. **Studio tab** — one building per project. Start from an asset template (office, multifamily, industrial, data center, retail) or one of your own uploaded presets; control every dimension, material, window, and door — and the **interior infrastructure**: place equipment and draw partition walls floor by floor, then slice the building open to work inside it.
-2. **💾 Save** — projects go to a library shared by both tabs (and auto-persist in the browser).
-3. **📍 Send to Atlas map** — the engine switches tabs and arms placement; click the map and your project lands as true-scale 3D massing (footprints, heights, material colors). Drag to move it, rotate it to sit the lot, place as many saved projects as you like — each placement is independent and persistent.
-4. Atlas keeps **all of its own features** around your placements: 3D terrain, OSM buildings, measuring, GeoJSON imports, saved views.
+1. **🏗️ Studio — shell & exterior.** One building per project. Pick an **asset type** (Multifamily, Retail, Office, Industrial, Data Center) from a dropdown, then a **preset build** — the standard template for that class, or one of your own uploaded signature builds — and hit Start. Control every dimension, material, roof, window, and door.
+2. **🔧 Interior — building systems & buildouts.** The shell comes straight from Studio (read-only here). Pick a floor, place equipment and draw partition walls; every element is classified into a building system — **Power / MEP / Utility / Buildout** — that you can show, hide, or flash **red** as a systems overlay.
+3. **💾 Save** — projects go to a library shared by every tab (and auto-persist in the browser).
+4. **📍 Send to Atlas map** — the engine switches tabs and arms placement; click the map and your project lands as true-scale 3D massing. Drag to move it, rotate it to sit the lot, place as many saved projects as you like.
+5. **🌍 Earth** — paste a Google Map Tiles API key and the same placed sites render over photorealistic 3D photogrammetry.
 
-`map/` and `lab/` remain the code homes for each system; their old standalone URLs redirect into the engine.
-
-| 🛰️ Atlas tab | 🏗️ Studio tab |
+| 🏗️ Studio | 🔧 Interior |
 | --- | --- |
-| ![Atlas](docs/atlas.png) | ![Studio](docs/studio.png) |
+| ![Studio](docs/studio.png) | ![Interior](docs/interior.png) |
+
+| 🛰️ Atlas |
+| --- |
+| ![Atlas](docs/atlas.png) |
+
+---
+
+## 🏗️ Studio — shell & exterior
+
+A black-space design studio where **nothing is left to guess**:
+
+- **Start a building** — asset-type dropdown → preset dropdown. Only the presets for the selected asset class are shown: its standard template plus any **signature builds you've uploaded** to the catalog. One building per project; starting a new one asks before replacing.
+- **True-dimension envelopes** — width/depth, story count × floor height, flat roof with parapet or gable with real pitch (rise:12) and ridge direction. Overall height reported in feet-inches.
+- **Real material textures at true pattern scale** — brick renders with modular courses at actual 8" × 2⅔" spacing; CMU at 16"×8"; concrete tilt-up with 15 ft panel reveals; metal panel with 12" ribs; curtainwall with 5 ft mullion grid; EIFS; 6" lap siding. Pattern size is exact because texture repeat is computed from wall meters.
+- **Openings are components** — windows and doors are first-class objects on each face: pick the **type** (fixed, double-hung, sliding, picture, storefront, ribbon, glass entry, man door, overhead door, dock door — each with real default sizes), then control **width, height, sill height, and position** to the inch. Walls get real holes; glass, frames, and mullions render per type. Click any window in 3D to select and edit it.
+- **Fast fenestration** — "Fill face evenly" arrays any type across a face; misfit/overlapping openings are flagged, never silently drawn wrong.
+- **Dimension annotations** — toggleable 3D dimension lines with feet-inch labels, a draggable 6 ft scale figure, framed/front/top cameras, PNG screenshots.
+- **Projects** — one building per project; auto-save, JSON export/import (foreign files are rejected, never wipe your work).
+
+## 🔧 Interior — building systems & buildouts
+
+Everything inside the building lives here; the shell is Studio's and arrives automatically:
+
+- **Systems classification** — every placed element belongs to **⚡ Power** (transformers, switchgear, UPS, PDUs, generators, panels…), **🌡 MEP** (CRAC/CRAH, RTUs, chillers, AHUs, boilers…), **🚰 Utility** (pumps, water heaters, fire pumps, compressors, tanks…), or **🧱 Buildout** (racking, partitions, fixtures, everything else). Uploaded catalog equipment is classified automatically by type and name.
+- **Visibility per system** — four toggle buttons show/hide each system independently: hide Buildouts to see the systems alone, or hide systems to see the finished interior.
+- **🔴 Systems overlay** — one switch renders every Power/MEP/Utility element in **red** and ghosts the buildouts to 18% grey, so equipment runs and electrical/mechanical rooms read instantly.
+- **Floor-by-floor doll-house** — floor chips + an Inside view (on by default) slice the building open above the active floor. Place equipment with real dimensions on the floor plane, draw partition walls with two clicks, then click any element in 3D to select it; drag, arrow-key nudge, rotate (Q/E), resize, delete.
+- **Palette grouped by system** — built-in equipment (racks, CRAC/CRAH, UPS, PDUs, switchgear, panels, pallet racking, machines…) plus everything you upload, grouped under Power / MEP / Utility / Buildout. The Data Center template ships with a full rack/CRAC/electrical-room layout to explore.
+
+### Your data — the catalog the system adapts to
+
+Studio's catalog upload (CSV or exported JSON) feeds every picker in the engine. One file, three kinds of rows:
+
+```csv
+kind,name,brand,type,width,depth,height,sill,color,stories,floorheight,parapet,material
+equipment,Chiller X90,Trane,chiller,8,4,6,,#5ad7d2,,,,
+opening,ProLine 4x6,Pella,double-hung,4,,6,2.5,#ffffff,,,,
+preset,Flex Warehouse 40k,,industrial,400,100,,,,1,28,3,metal
+```
+
+- `equipment` rows join the **Interior palette**, auto-classified into their building system.
+- `opening` rows join the **windows & doors picker** as products with real sizes (`type` maps to a base type: window, double-hung, sliding, storefront, door, overhead, dock…).
+- `preset` rows join the **preset build dropdown** under their asset class (`type`: multifamily/retail/office/industrial/datacenter) as signature builds.
+
+Dimensions are read in the current units; entries persist in the browser and export/import as JSON. A ready-made starter is in `data/`: **`catalog-seed.csv`** (559 rows of real-world equipment, opening products, and developer signature builds) generated from the reference workbook **`building-systems-catalog.xlsx`**.
 
 ---
 
@@ -31,50 +75,23 @@ A serious 3D mapping platform (MapLibre GL v5):
 - **Status bar** — live cursor coordinates, ground elevation, zoom, camera bearing/pitch. Right-click → copy coordinates, measure from here.
 - **PNG screenshots** with imagery credits and measurement labels baked in.
 
-### What you can give me to make Atlas stronger
+## 🌍 Earth — photorealistic 3D
 
-The system runs 100% key-free today. Each of these drops in cleanly and levels it up:
+Google-Earth-grade visuals, opt-in with your own key:
+
+- Paste a **Google Map Tiles API key** and the tab streams **Photorealistic 3D Tiles** — actual photogrammetry meshes of most world metros (CesiumJS renderer, loaded only when a key is present).
+- Your **placed Atlas sites render on top** as true-scale massing, clamped to the photogrammetry.
+- The key is stored **only in your browser** (localStorage) — never in this repo. Restrict it to your site origin + the Map Tiles API in Google Cloud.
+
+### What you can give me to make the maps stronger
 
 | You provide | What it unlocks |
 | --- | --- |
-| **Building footprints GeoJSON** (county GIS, Microsoft/OSM footprint extracts, Regrid, etc.) | Already supported — drop the file on the map and footprints with heights render as 3D. This is the single best upgrade and it's free. |
+| **Building footprints GeoJSON** (county GIS, Microsoft/OSM footprint extracts, Regrid, etc.) | Already supported — drop the file on Atlas and footprints with heights render as 3D. Free and the single best upgrade. |
 | **Parcel boundaries GeoJSON** | Lot lines over satellite — same drag-drop path. |
-| **Google Maps Platform key** (Map Tiles API) | **Photorealistic 3D Tiles** — actual photogrammetry meshes of most US metros. This is the visual endgame; it needs a Cesium/deck.gl layer added, which I'd build as an Atlas mode. |
 | **Cesium ion token** (free tier) | Cesium World Terrain (crisper than the public DEM) + worldwide OSM Buildings as clean 3D tiles. |
 | **MapTiler key** (free tier) | Sharper vector basemaps, contour lines, higher-zoom terrain. |
 | **Nearmap / EagleView / state orthophoto endpoint** | Recent, high-res aerials as a drop-in raster source (many state/county GIS servers are free WMS/XYZ). |
-
----
-
-## 🏗️ Studio — the rendering tab
-
-A black-space design studio where **nothing is left to guess**:
-
-- **True-dimension envelopes** — width/depth per building, story count × floor height, flat roof with parapet or gable with real pitch (rise:12) and ridge direction. Overall height reported in feet-inches.
-- **Real material textures at true pattern scale** — brick renders with modular courses at actual 8" × 2⅔" spacing; CMU at 16"×8"; concrete tilt-up with 15 ft panel reveals; metal panel with 12" ribs; curtainwall with 5 ft mullion grid; EIFS; 6" lap siding. Pattern size is exact because texture repeat is computed from wall meters.
-- **Openings are components** — windows and doors are first-class objects on each face: pick the **type** (fixed, double-hung, sliding, picture, storefront, ribbon, glass entry, man door, overhead door, dock door — each with real default sizes), then control **width, height, sill height, and position** to the inch. Walls get real holes; glass, frames, and mullions render per type. Click any window in 3D to select and edit it.
-- **Fast fenestration** — "Fill face evenly" arrays any type across a face; misfit/overlapping openings are flagged, never silently drawn wrong.
-- **Asset-type templates** — Office, Multifamily, Industrial, Data Center, Retail: one click generates a building with that asset class's construction defaults (materials, story heights, dock doors, storefront runs…). All of it stays editable.
-- **Interior infrastructure** — pick a floor, place equipment with real dimensions (server racks, CRAC/CRAH, UPS, PDUs, switchgear, panels, pallet racking, machines — plus anything you upload), draw partition walls with two clicks, and hit **👁 Inside** to slice the building open above the active floor (doll-house view). Click any interior item in 3D to select it; drag, rotate, resize, delete. The Data Center template ships with a full rack/CRAC/electrical-room layout.
-- **Dimension annotations** — toggleable 3D dimension lines with feet-inch labels, a draggable 6 ft scale figure, framed/front/top cameras, PNG screenshots.
-- **Projects** — one building per project; auto-save, JSON export/import (foreign files are rejected, never wipe your work).
-
-### Your data — the catalog the system adapts to
-
-Studio has a **catalog upload** (CSV or exported JSON) that feeds every picker. One file, three kinds of rows:
-
-```csv
-kind,name,brand,type,width,depth,height,sill,color,stories,floorheight,parapet,material
-equipment,Chiller X90,Trane,chiller,8,4,6,,#5ad7d2,,,,
-opening,ProLine 4x6,Pella,double-hung,4,,6,2.5,#ffffff,,,,
-preset,Flex Warehouse 40k,,industrial,400,100,,,,1,28,3,metal
-```
-
-- `equipment` rows join the **interior palette** (place them on any floor).
-- `opening` rows join the **windows & doors picker** as products with real sizes (`type` maps to a base type: window, double-hung, sliding, storefront, door, overhead, dock…).
-- `preset` rows join the **building templates** grid.
-
-Dimensions are read in the current units; entries persist in the browser and export/import as JSON.
 
 ---
 
@@ -85,12 +102,12 @@ python3 -m http.server 8000   # ES modules need HTTP
 # engine: http://localhost:8000/   (Studio tab; #atlas opens the map tab)
 ```
 
-GitHub Pages: **Settings → Pages → Deploy from a branch** → `main` / root. The hub page links both systems.
+GitHub Pages: **Settings → Pages → Deploy from a branch** → `main` / root.
 
 ## Verification
 
-28 headless-browser checks across both systems plus 12 engine-integration checks (tab lifecycle, project library, placement round-trip with exact 35 ft massing heights and 200 ft footprint edges): template generation with zero misfit openings, wall holes at exact `u ± w/2`, texture repeat exactly `1/pattern-size`, area math within 0.15% on a 100 m square, GeoJSON height extrusion, measure totals, basemap switching, import guards, round-trip persistence — plus multi-agent adversarial code review each round.
+**50 headless-browser checks** across all four tabs: boot + lazy tab lifecycle, non-black canvas regressions on both 3D viewports, the asset/preset picker (5 classes, replace-confirm, catalog presets scoped to their class, unknown types reachable via "Other uploads"), shell-only rendering in Studio, Interior handover, system auto-classification counts, per-system hide/show, red-overlay material verification (cap accents stay hidden), shell click-occlusion (no pick-through the roof), orphan-floor items hidden + flagged when the shell shrinks, armed-mode reset and camera preservation across tab switches, hidden-tab render loops actually pausing, palette grouping, catalog CSV adaptation with per-row deletion, exact product opening sizes, interior round-trip persistence, project library, placement round-trip with exact 35 ft massing heights and ~200 ft footprint edges (independent ellipsoidal check), Atlas core (terrain/OSM 3D/sites), and Earth key-gating — plus multi-agent adversarial code review each round.
 
 ## Attribution
 
-Esri World Imagery · © OpenStreetMap contributors · © CARTO · OpenMapTiles/OpenFreeMap · Terrain: Mapzen/AWS, USGS, SRTM · Photon/komoot geocoding · MapLibre GL JS (BSD-3) · three.js (MIT)
+Esri World Imagery · © OpenStreetMap contributors · © CARTO · OpenMapTiles/OpenFreeMap · Terrain: Mapzen/AWS, USGS, SRTM · Photon/komoot geocoding · Google Photorealistic 3D Tiles (user-keyed) · MapLibre GL JS (BSD-3) · CesiumJS (Apache-2.0) · three.js (MIT)
