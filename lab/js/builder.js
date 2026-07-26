@@ -213,7 +213,7 @@ function buildSlabs(b, group) {
 }
 
 /* ---------------- dimension annotations ---------------- */
-function textSprite(text, k = 1) {
+function textSprite(text, k = 1, depthTest = false) {
   const c = document.createElement("canvas");
   const g = c.getContext("2d");
   g.font = "600 44px 'Segoe UI', system-ui, sans-serif";
@@ -231,7 +231,7 @@ function textSprite(text, k = 1) {
   g2.fillText(text, w / 2, 38);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest }));
   const scale = 0.014 * k;
   spr.scale.set(w * scale, 72 * scale, 1);
   spr.renderOrder = 10;
@@ -281,6 +281,42 @@ function buildInterior(b, group) {
       m.castShadow = m.receiveShadow = true;
       m.userData = { buildingId: b.id, interiorId: it.id };
       group.add(m);
+    } else if (it.space) {
+      // high-level buildout space: translucent volume + floor pad + outline + name tag
+      const color = new THREE.Color(it.color);
+      const vol = new THREE.Mesh(
+        new THREE.BoxGeometry(it.w, it.h, it.d),
+        new THREE.MeshStandardMaterial({
+          color, transparent: true, opacity: 0.3, roughness: 0.85, depthWrite: false,
+        })
+      );
+      vol.position.set(it.x, base + it.h / 2, it.z);
+      vol.rotation.y = -it.rot * Math.PI / 180;
+      vol.userData = { buildingId: b.id, interiorId: it.id };
+      group.add(vol);
+      const pad = new THREE.Mesh(
+        new THREE.BoxGeometry(it.w * 0.995, 0.05, it.d * 0.995),
+        new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.55), roughness: 0.95 })
+      );
+      pad.position.set(0, -it.h / 2 + 0.03, 0);
+      pad.receiveShadow = true;
+      pad.userData = vol.userData;
+      vol.add(pad);
+      const edges = new THREE.LineSegments(
+        new THREE.EdgesGeometry(vol.geometry),
+        new THREE.LineBasicMaterial({ color: color.clone().multiplyScalar(1.25) })
+      );
+      edges.userData = vol.userData;
+      vol.add(edges);
+      // depthTest on so the label hides behind the shell from outside;
+      // clamp below the doll-house cut (0.9·floorH) so the clip plane
+      // never slices the text on short floors
+      const kTag = Math.min(2.6, Math.max(1, Math.max(it.w, it.d) / 9));
+      const tag = textSprite(it.name, kTag, true);
+      const tagTop = Math.max(1, b.floorH * 0.9 - 0.13 - 0.58 * kTag);
+      tag.position.set(0, Math.min(it.h + 0.35, tagTop) - it.h / 2, 0);
+      tag.userData = vol.userData;
+      vol.add(tag);
     } else {
       const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(it.color), roughness: 0.6, metalness: 0.3,

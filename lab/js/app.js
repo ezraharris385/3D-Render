@@ -49,14 +49,14 @@ function initScene() {
   scene.background = new THREE.Color(0x0b0d10);
   scene.fog = new THREE.Fog(0x0b0d10, 320, 900);
 
-  camera = new THREE.PerspectiveCamera(48, 1, 0.5, 2000);
+  camera = new THREE.PerspectiveCamera(48, 1, 0.3, 2000);
   camera.position.set(52, 34, 58);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
   controls.maxPolarAngle = Math.PI / 2 - 0.02;
-  controls.minDistance = 2;
+  controls.minDistance = 0.6; // get right up against the facade
   controls.maxDistance = 500;
   controls.target.set(0, 5, 0);
 
@@ -935,7 +935,9 @@ window.lab = {
 };
 
 return {
-  refresh() { rebuildAll(); renderPanels(); }, // shell may change while on other tabs
+  // shell may change while on other tabs (Interior can import projects);
+  // renderPanels picks a selection, so helpers must re-run after it
+  refresh() { rebuildAll(); renderPanels(); refreshHelpers(); },
   setActive,
 };
 

@@ -54,6 +54,8 @@ function switchTab(next) {
   if (tab === "interior") {
     if (!interiorApi) interiorApi = initInterior(shell);
     else interiorApi.activate();
+  } else if (tab === "studio" && studioApi) {
+    studioApi.refresh(); // the Interior tab can import projects — resync
   }
   // only the visible three.js renderer keeps its animation loop running
   if (studioApi) studioApi.setActive(tab === "studio");
