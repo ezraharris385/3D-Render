@@ -1,14 +1,23 @@
-# 3D Render — Two Dedicated Systems
+# 3D Render Engine — Studio + Atlas
 
-Two precision systems built separately, designed to combine later. Desktop-only, static files, no build step, **no API keys required** for anything that ships here.
+**One engine, two tabs.** Design true-dimension buildings in **🏗️ Studio**, save them as projects, then switch to **🛰️ Atlas** and place them on the satellite map — where they render at real scale alongside Atlas's full mapping feature set. Desktop-only, static files, no build step, **no API keys required**.
 
-| 🛰️ Atlas — Mapping System (`map/`) | 🏗️ Studio — Rendering Lab (`lab/`) |
+## The workflow
+
+1. **Studio tab** — build from an asset template (office, multifamily, industrial, data center, retail) or from scratch; control every dimension, material, window, and door.
+2. **💾 Save** — projects go to a library shared by both tabs (and auto-persist in the browser).
+3. **📍 Send to Atlas map** — the engine switches tabs and arms placement; click the map and your project lands as true-scale 3D massing (footprints, heights, material colors). Drag to move it, rotate it to sit the lot, place as many saved projects as you like — each placement is independent and persistent.
+4. Atlas keeps **all of its own features** around your placements: 3D terrain, OSM buildings, measuring, GeoJSON imports, saved views.
+
+`map/` and `lab/` remain the code homes for each system; their old standalone URLs redirect into the engine.
+
+| 🛰️ Atlas tab | 🏗️ Studio tab |
 | --- | --- |
 | ![Atlas](docs/atlas.png) | ![Studio](docs/studio.png) |
 
 ---
 
-## 🛰️ Atlas — the mapping system
+## 🛰️ Atlas — the mapping tab
 
 A serious 3D mapping platform (MapLibre GL v5):
 
@@ -37,7 +46,7 @@ The system runs 100% key-free today. Each of these drops in cleanly and levels i
 
 ---
 
-## 🏗️ Studio — the rendering lab
+## 🏗️ Studio — the rendering tab
 
 A black-space design studio where **nothing is left to guess**:
 
@@ -67,16 +76,14 @@ When you're ready to feed in real data per asset class (expected story heights, 
 
 ```bash
 python3 -m http.server 8000   # ES modules need HTTP
-# hub:    http://localhost:8000/
-# atlas:  http://localhost:8000/map/
-# studio: http://localhost:8000/lab/
+# engine: http://localhost:8000/   (Studio tab; #atlas opens the map tab)
 ```
 
 GitHub Pages: **Settings → Pages → Deploy from a branch** → `main` / root. The hub page links both systems.
 
 ## Verification
 
-23 headless-browser checks across both systems: template generation with zero misfit openings, wall holes at exact `u ± w/2`, texture repeat exactly `1/pattern-size`, area math within 0.15% on a 100 m square, GeoJSON height extrusion, measure totals, basemap switching, import guards, round-trip persistence — plus multi-agent adversarial code review each round.
+28 headless-browser checks across both systems plus 12 engine-integration checks (tab lifecycle, project library, placement round-trip with exact 35 ft massing heights and 200 ft footprint edges): template generation with zero misfit openings, wall holes at exact `u ± w/2`, texture repeat exactly `1/pattern-size`, area math within 0.15% on a 100 m square, GeoJSON height extrusion, measure totals, basemap switching, import guards, round-trip persistence — plus multi-agent adversarial code review each round.
 
 ## Attribution
 
