@@ -60,6 +60,40 @@ export function massing(buildings) {
   }));
 }
 
+/* ---------------- shared geodesy (Atlas + Earth) ---------------- */
+export function wrapLng(lng) { return ((lng % 360) + 540) % 360 - 180; }
+export function metersPerDegree(lat) {
+  const p = lat * Math.PI / 180;
+  return {
+    lat: 111132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p),
+    lng: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p),
+  };
+}
+export function siteToLngLat(x, z, site) {
+  const th = site.rot * Math.PI / 180;
+  const c = Math.cos(th), s = Math.sin(th);
+  const east = x * c + (-z) * s;
+  const north = -x * s + (-z) * c;
+  const m = metersPerDegree(site.lat);
+  return [wrapLng(site.lng + east / m.lng), site.lat + north / m.lat];
+}
+/* per-building footprint rings (lng/lat, closed) for a placed site */
+export function siteBuildingRings(site) {
+  return site.buildings.map(bd => {
+    const th = bd.rot * Math.PI / 180;
+    const c = Math.cos(th), s = Math.sin(th);
+    const ring = [[-bd.w / 2, -bd.d / 2], [bd.w / 2, -bd.d / 2], [bd.w / 2, bd.d / 2], [-bd.w / 2, bd.d / 2]]
+      .map(([lx, lz]) => siteToLngLat(bd.x + lx * c - lz * s, bd.z + lx * s + lz * c, site));
+    ring.push(ring[0]);
+    return { ring, h: bd.h, color: bd.color, name: bd.name };
+  });
+}
+
+/* ---------------- API keys ---------------- */
+const KEYS_KEY = "engine-keys-v1";
+export function getKeys() { return read(KEYS_KEY, {}); }
+export function setKeys(patch) { write(KEYS_KEY, { ...getKeys(), ...patch }); }
+
 /* ---------------- placed sites (Atlas) ---------------- */
 export function getSites() {
   const arr = read(SITES_KEY, []);
