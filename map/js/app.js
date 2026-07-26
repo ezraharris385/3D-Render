@@ -6,10 +6,13 @@
    No API keys required for any default source.
    ========================================================= */
 "use strict";
+import * as bridge from "../../js/bridge.js";
 
 const $ = id => document.getElementById(id);
 const STORAGE_KEY = "atlas-map-v1";
 const DEFAULT_VIEW = { center: [-89.384, 43.0747], zoom: 15.2, pitch: 55, bearing: -20 };
+
+export function initAtlas(shell) {
 
 let units = "ft"; // 'ft' | 'm'
 let mode = "idle"; // 'idle' | 'dist' | 'area'
@@ -141,6 +144,7 @@ const style = {
       url: "https://tiles.openfreemap.org/planet",
       attribution: "© OpenMapTiles © OpenStreetMap contributors",
     },
+    sites: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
     measureLine: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
     measureFill: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
     measurePts: { type: "geojson", data: { type: "FeatureCollection", features: [] } },
@@ -165,6 +169,20 @@ const style = {
         "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
         "fill-extrusion-opacity": 0.86,
       },
+    },
+    {
+      id: "sites-3d", type: "fill-extrusion", source: "sites",
+      paint: {
+        "fill-extrusion-color": ["get", "color"],
+        "fill-extrusion-height": ["get", "h"],
+        "fill-extrusion-base": 0,
+        "fill-extrusion-opacity": 0.92,
+      },
+    },
+    {
+      id: "sites-outline", type: "line", source: "sites",
+      filter: ["==", ["get", "selected"], 1],
+      paint: { "line-color": "#ffd166", "line-width": 2.5, "line-dasharray": [1.4, 1] },
     },
     { id: "measure-fill", type: "fill", source: "measureFill",
       paint: { "fill-color": "#4da3ff", "fill-opacity": 0.22 } },
@@ -193,6 +211,7 @@ map.keyboard.disableRotation();
 
 map.on("load", () => {
   setTerrain(true);
+  renderSites();
   toast("Atlas ready — search a place or drop a GeoJSON on the map");
 });
 
@@ -416,6 +435,15 @@ map.on("click", e => {
   if (mode === "dist" || mode === "area") {
     measurePts.push(e.lngLat);
     updateMeasure();
+    return;
+  }
+  if (mode === "place" && pendingProject) {
+    placeSiteAt(e.lngLat);
+    return;
+  }
+  if (mode === "idle" && selectedSiteId !== null) {
+    const hits = map.queryRenderedFeatures(e.point, { layers: ["sites-3d"] });
+    if (!hits.length) { selectedSiteId = null; renderSites(); }
   }
 });
 map.on("dblclick", e => {
@@ -424,6 +452,215 @@ map.on("dblclick", e => {
     if (measurePts.length > 1) measurePts.pop(); // drop the double-click duplicate
     finishMeasure(); // keeps the drawing, re-renders without the duplicate
   }
+});
+
+/* ---------------- Studio sites (placed projects) ---------------- */
+let sites = bridge.getSites();
+let selectedSiteId = null;
+let nextSiteId = sites.reduce((m, s) => Math.max(m, s.id + 1), 1);
+let pendingProject = null;
+let siteDrag = null;
+let siteMarkers = new Map();
+
+function wrapLng(lng) { return ((lng % 360) + 540) % 360 - 180; }
+function metersPerDegree(lat) {
+  const p = lat * Math.PI / 180;
+  return {
+    lat: 111132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p),
+    lng: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p),
+  };
+}
+/* studio plane (x east, z south) -> lng/lat via site anchor + rotation (deg CW) */
+function siteToLngLat(x, z, site) {
+  const th = site.rot * Math.PI / 180;
+  const c = Math.cos(th), s = Math.sin(th);
+  const e0 = x, n0 = -z;
+  const east = e0 * c + n0 * s;
+  const north = -e0 * s + n0 * c;
+  const m = metersPerDegree(site.lat);
+  return [wrapLng(site.lng + east / m.lng), site.lat + north / m.lat];
+}
+function bldgRing(bd, site) {
+  const th = bd.rot * Math.PI / 180;
+  const c = Math.cos(th), s = Math.sin(th);
+  const pts = [[-bd.w / 2, -bd.d / 2], [bd.w / 2, -bd.d / 2], [bd.w / 2, bd.d / 2], [-bd.w / 2, bd.d / 2]]
+    .map(([lx, lz]) => [bd.x + lx * c - lz * s, bd.z + lx * s + lz * c]);
+  const ring = pts.map(([x, z]) => siteToLngLat(x, z, site));
+  ring.push(ring[0]);
+  return ring;
+}
+
+/* geometry + markers only — safe to call at input-event rates */
+function renderSitesGeo() {
+  const src = map.getSource("sites");
+  if (!src) return;
+  const fc = { type: "FeatureCollection", features: [] };
+  for (const site of sites) {
+    for (const bd of site.buildings) {
+      fc.features.push({
+        type: "Feature",
+        properties: {
+          siteId: site.id, color: bd.color, h: bd.h,
+          selected: site.id === selectedSiteId ? 1 : 0,
+        },
+        geometry: { type: "Polygon", coordinates: [bldgRing(bd, site)] },
+      });
+    }
+  }
+  src.setData(fc);
+  // one name pill per site
+  const live = new Set();
+  for (const site of sites) {
+    live.add(site.id);
+    let mk = siteMarkers.get(site.id);
+    if (!mk) {
+      const el = document.createElement("div");
+      el.className = "measure-label area-label";
+      mk = new maplibregl.Marker({ element: el, anchor: "center", offset: [0, -18] })
+        .setLngLat([site.lng, site.lat]).addTo(map);
+      siteMarkers.set(site.id, mk);
+    }
+    mk.getElement().textContent = site.name;
+    mk.setLngLat([site.lng, site.lat]);
+  }
+  for (const [id, mk] of siteMarkers) {
+    if (!live.has(id)) { mk.remove(); siteMarkers.delete(id); }
+  }
+}
+function renderSites() {
+  renderSitesGeo();
+  renderSiteList();
+  bridge.setSites(sites);
+}
+
+function armPlacement(project) {
+  pendingProject = project;
+  setMode("idle");
+  mode = "place";
+  map.getCanvas().style.cursor = "crosshair";
+  const b = $("modeBanner");
+  b.style.display = "";
+  b.textContent = `Click the map to place “${project.name}” (Esc to cancel)`;
+}
+
+function placeSiteAt(lngLat) {
+  // re-resolve at click time so a re-save between arming and placing isn't stale
+  const libEntry = bridge.listProjects().find(p => p.name === pendingProject.name);
+  const site = {
+    id: nextSiteId++,
+    name: pendingProject.name,
+    lng: wrapLng(lngLat.lng), lat: lngLat.lat, rot: 0,
+    buildings: libEntry ? bridge.massing(libEntry.buildings) : pendingProject.massing,
+  };
+  sites.push(site);
+  pendingProject = null;
+  mode = "idle";
+  map.getCanvas().style.cursor = "";
+  $("modeBanner").style.display = "none";
+  selectedSiteId = site.id;
+  renderSites();
+  toast(`“${site.name}” placed — drag to move, use its slider to line it up`);
+}
+
+function renderProjPanel() {
+  const holder = $("projList");
+  holder.innerHTML = "";
+  const projects = bridge.listProjects();
+  if (!projects.length) {
+    holder.innerHTML = `<div class="lyr"><span class="meta">No saved projects yet — design in the Studio tab and hit “Send to Atlas map”.</span></div>`;
+    return;
+  }
+  for (const p of projects) {
+    const el = document.createElement("div");
+    el.className = "lyr";
+    el.innerHTML = `<div class="row"><span class="name"></span><span class="meta"></span><button class="place">📍 Place</button></div>`;
+    el.querySelector(".name").textContent = p.name;
+    el.querySelector(".meta").textContent = `${p.buildings.length} bldg${p.buildings.length === 1 ? "" : "s"}`;
+    el.querySelector(".place").addEventListener("click", () =>
+      armPlacement({ name: p.name, massing: bridge.massing(p.buildings) }));
+    holder.appendChild(el);
+  }
+}
+bridge.onProjectsChanged(renderProjPanel);
+
+function renderSiteList() {
+  const holder = $("siteList");
+  holder.innerHTML = "";
+  for (const site of sites) {
+    const el = document.createElement("div");
+    el.className = "lyr";
+    const sel = site.id === selectedSiteId;
+    el.innerHTML = `
+      <div class="row">
+        <span class="name" style="cursor:pointer"></span>
+        <button class="zoom" title="Zoom to site">⌖</button>
+        <button class="mini" title="Remove from map">✕</button>
+      </div>
+      ${sel ? `<div class="row"><label class="small">Rotation — <span class="rv"></span>°</label></div>
+      <input type="range" class="rot" min="0" max="359" step="1" value="${Math.round(site.rot)}">` : ""}`;
+    el.querySelector(".name").textContent = (sel ? "▸ " : "") + site.name;
+    el.querySelector(".name").addEventListener("click", () => {
+      selectedSiteId = sel ? null : site.id;
+      renderSites();
+    });
+    el.querySelector(".zoom").addEventListener("click", () => {
+      selectedSiteId = site.id;
+      map.flyTo({ center: [site.lng, site.lat], zoom: 17.5, pitch: 55, duration: 1400 });
+      renderSites();
+    });
+    el.querySelector(".mini").addEventListener("click", () => {
+      sites = sites.filter(s => s !== site);
+      if (selectedSiteId === site.id) selectedSiteId = null;
+      renderSites();
+    });
+    if (sel) {
+      const rv = el.querySelector(".rv");
+      rv.textContent = Math.round(site.rot);
+      el.querySelector(".rot").addEventListener("input", ev => {
+        site.rot = parseFloat(ev.target.value) || 0;
+        rv.textContent = Math.round(site.rot);
+        renderSitesGeo(); // don't rebuild the list mid-drag
+      });
+      el.querySelector(".rot").addEventListener("change", () => bridge.setSites(sites));
+    }
+    holder.appendChild(el);
+  }
+}
+
+/* drag a placed site by any of its buildings */
+map.on("mousedown", "sites-3d", e => {
+  if (mode !== "idle" || !e.features.length) return;
+  if (e.originalEvent && e.originalEvent.button !== 0) return;
+  e.preventDefault();
+  const site = sites.find(s => s.id === e.features[0].properties.siteId);
+  if (!site) return;
+  selectedSiteId = site.id;
+  siteDrag = { site, startLngLat: e.lngLat, origLng: site.lng, origLat: site.lat, moved: false };
+  map.getCanvas().style.cursor = "grabbing";
+  renderSites();
+});
+map.on("mousemove", e => {
+  if (!siteDrag) return;
+  siteDrag.site.lng = wrapLng(siteDrag.origLng + (e.lngLat.lng - siteDrag.startLngLat.lng));
+  siteDrag.site.lat = siteDrag.origLat + (e.lngLat.lat - siteDrag.startLngLat.lat);
+  siteDrag.moved = true;
+  renderSitesGeo(); // list + persistence wait for drag end
+});
+const endSiteDrag = () => {
+  if (siteDrag && siteDrag.moved) {
+    suppressNextClick = true;
+    bridge.setSites(sites);
+  }
+  siteDrag = null;
+  map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
+};
+map.on("mouseup", endSiteDrag);
+window.addEventListener("mouseup", () => { if (siteDrag) endSiteDrag(); });
+map.on("mouseenter", "sites-3d", () => {
+  if (mode === "idle" && !siteDrag) map.getCanvas().style.cursor = "grab";
+});
+map.on("mouseleave", "sites-3d", () => {
+  if (!siteDrag) map.getCanvas().style.cursor = mode === "idle" ? "" : "crosshair";
 });
 
 /* ---------------- context menu ---------------- */
@@ -479,9 +716,8 @@ $("geoFile").addEventListener("change", e => {
   e.target.value = "";
   if (f) importGeoFile(f);
 });
-["dragover", "drop"].forEach(evt =>
-  document.addEventListener(evt, e => { e.preventDefault(); }));
 document.addEventListener("drop", e => {
+  if (shell.getTab() !== "atlas") return; // shell owns preventDefault globally
   const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
   if (f) importGeoFile(f);
 });
@@ -693,21 +929,21 @@ renderViews();
 /* ---------------- units / views / screenshot ---------------- */
 function setUnits(u) {
   units = u;
-  $("unitFt").classList.toggle("active", u === "ft");
-  $("unitM").classList.toggle("active", u === "m");
+  $("atUnitFt").classList.toggle("active", u === "ft");
+  $("atUnitM").classList.toggle("active", u === "m");
   scaleCtrl.setUnit(u === "ft" ? "imperial" : "metric");
   updateMeasure();
   persist();
 }
-$("unitFt").addEventListener("click", () => setUnits("ft"));
-$("unitM").addEventListener("click", () => setUnits("m"));
+$("atUnitFt").addEventListener("click", () => setUnits("ft"));
+$("atUnitM").addEventListener("click", () => setUnits("m"));
 setUnits(units);
 
 $("view3dBtn").addEventListener("click", () => map.easeTo({ pitch: 62, duration: 700 }));
 $("viewTopBtn").addEventListener("click", () => map.easeTo({ pitch: 0, duration: 700 }));
 $("northBtn").addEventListener("click", () => map.easeTo({ bearing: 0, duration: 700 }));
 
-$("shotBtn").addEventListener("click", () => {
+$("atShotBtn").addEventListener("click", () => {
   map.once("render", () => {
     const src = map.getCanvas();
     const out = document.createElement("canvas");
@@ -756,11 +992,19 @@ $("shotBtn").addEventListener("click", () => {
 
 /* ---------------- keyboard ---------------- */
 window.addEventListener("keydown", e => {
+  if (shell.getTab() !== "atlas") return; // Studio owns the keyboard on its tab
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   switch (e.key) {
     case "Escape":
       if (ctx.style.display !== "none") { hideCtx(); break; } // just close the menu
+      if (mode === "place") {
+        mode = "idle";
+        pendingProject = null;
+        $("modeBanner").style.display = "none";
+        map.getCanvas().style.cursor = "";
+        break;
+      }
       if (mode === "dist" || mode === "area") finishMeasure(); // banner says Esc finishes
       break;
     case "t": case "T": map.easeTo({ pitch: map.getPitch() > 5 ? 0 : 60, duration: 600 }); break;
@@ -770,19 +1014,22 @@ window.addEventListener("keydown", e => {
   }
 });
 
-/* ---------------- toast ---------------- */
-let toastTimer = null;
-function toast(msg) {
-  const el = $("toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
-}
+/* ---------------- toast (shared shell timer) ---------------- */
+function toast(msg) { shell.toast(msg); }
+
+renderProjPanel();
 
 /* test hooks */
 window.atlas = {
-  map, setBase, setMode, setUnits, addGeoLayer, finishMeasure,
+  map, setBase, setMode, setUnits, addGeoLayer, finishMeasure, armPlacement, placeSiteAt,
   importedLayers: () => importedLayers, measureState: () => ({ mode, measureKind, pts: measurePts.length }),
+  sites: () => sites,
   ringAreaM2, haversine, fmtDist, fmtArea,
 };
+
+return {
+  resize: () => map.resize(),
+  armPlacement,
+  refreshProjects: renderProjPanel,
+};
+} // end initAtlas

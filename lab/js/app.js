@@ -13,8 +13,11 @@ import {
 } from "./state.js";
 import { buildBuilding, buildDims, disposeGroup } from "./builder.js";
 import { TEMPLATES } from "./templates.js";
+import * as bridge from "../../js/bridge.js";
 
 const $ = id => document.getElementById(id);
+
+export function initStudio(shell) {
 
 let renderer, scene, camera, controls, human;
 let buildingGroups = new Map();
@@ -259,6 +262,7 @@ function onPointerUp(e) {
 }
 
 window.addEventListener("keydown", e => {
+  if (shell.getTab() !== "studio") return; // Atlas owns the keyboard on its tab
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
   const b = selectedBuilding();
@@ -658,15 +662,8 @@ function setUnits(u) {
   save();
 }
 
-/* ---------------- toast ---------------- */
-let toastTimer = null;
-function toast(msg) {
-  const el = $("toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 3200);
-}
+/* ---------------- toast (shared shell timer) ---------------- */
+function toast(msg) { shell.toast(msg); }
 
 /* ---------------- boot ---------------- */
 window.addEventListener("pagehide", flushSave);
@@ -683,6 +680,69 @@ rebuildAll();
 renderPanels();
 if (state.buildings.length) frameSelected();
 
+/* ---------------- project library + send to map ---------------- */
+bridge.registerLive(() => JSON.parse(JSON.stringify(state.buildings)));
+
+function renderProjLib() {
+  const holder = $("projLibList");
+  holder.innerHTML = "";
+  for (const p of bridge.listProjects()) {
+    const el = document.createElement("div");
+    el.className = "b-item";
+    el.innerHTML = `<span class="b-name"></span><span class="b-dims"></span><button class="load">Load</button><button class="b-del">✕</button>`;
+    el.querySelector(".b-name").textContent = p.name;
+    el.querySelector(".b-dims").textContent = `${p.buildings.length} bldg${p.buildings.length === 1 ? "" : "s"}`;
+    el.querySelector(".load").addEventListener("click", () => {
+      if (state.buildings.length && !confirm(`Replace the current work with “${p.name}”?`)) return;
+      // deep-copy so live edits never alias the library entry
+      loadProject({ app: "render-lab", buildings: JSON.parse(JSON.stringify(p.buildings)) });
+      setUnits(state.units);
+      changedAll();
+      frameSelected();
+      $("projName").value = p.name;
+      toast(`Loaded “${p.name}”`);
+    });
+    el.querySelector(".b-del").addEventListener("click", () => {
+      bridge.deleteProject(p.name);
+    });
+    holder.appendChild(el);
+  }
+}
+bridge.onProjectsChanged(renderProjLib);
+renderProjLib();
+
+function uniqueName(base) {
+  const taken = new Set(bridge.listProjects().map(p => p.name));
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
+}
+function resolveProjectName({ confirmOverwrite }) {
+  let name = $("projName").value.trim();
+  if (!name) {
+    name = uniqueName("Untitled project"); // never silently clobber the last unnamed save
+  } else if (confirmOverwrite && bridge.listProjects().some(p => p.name === name)) {
+    if (!confirm(`Overwrite the existing project “${name}”?`)) return null;
+  }
+  $("projName").value = name;
+  return name;
+}
+$("projSaveBtn").addEventListener("click", () => {
+  if (!state.buildings.length) { toast("Nothing to save yet"); return; }
+  const name = resolveProjectName({ confirmOverwrite: true });
+  if (!name) return;
+  bridge.saveProject(name, state.buildings);
+  toast(`“${name}” saved to the library`);
+});
+$("sendToMapBtn").addEventListener("click", () => {
+  if (!state.buildings.length) { toast("Design a building first"); return; }
+  const name = resolveProjectName({ confirmOverwrite: false }); // re-sending same name = update
+  if (!name) return;
+  bridge.saveProject(name, state.buildings); // placing implies saving
+  shell.requestPlacement({ name, massing: bridge.massing(state.buildings) });
+});
+
 /* test hooks */
 window.lab = {
   state, makeBuilding, addOpening, removeBuilding, arrayOpenings,
@@ -690,3 +750,5 @@ window.lab = {
   exportProject, loadProject, frameSelected, setUnits,
   fittedOpenings, faceLength, wallHeight, totalHeight,
 };
+
+} // end initStudio
