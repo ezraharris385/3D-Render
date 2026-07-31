@@ -56,6 +56,63 @@ export const INTERIOR_TYPES = {
   "workbench":   { label: "Workbench / desk",    w: 1.8288, d: 0.7620, h: 0.9144, color: "#a97142" },
   "machine":     { label: "Machine / skid",      w: 2.4384, d: 1.5240, h: 1.8288, color: "#4da3ff" },
 
+  /* -------- Structure (toggleable like any system) -------- */
+  "col-steel":     { label: "Steel column (HSS 14)",     w: 0.3556, d: 0.3556, h: 4.0,    color: "#8d99a6", sys: "structure" },
+  "col-concrete":  { label: "Concrete column (24″)", w: 0.6096, d: 0.6096, h: 4.0,   color: "#9aa0a6", sys: "structure" },
+  "girder":        { label: "Steel girder (W24)",        w: 9.1440, d: 0.3048, h: 0.6096, color: "#7f8b98", sys: "structure", elev: 2.9 },
+  "bar-joist":     { label: "Bar joist run",             w: 9.1440, d: 0.1524, h: 0.4572, color: "#7f8b98", sys: "structure", elev: 3.2 },
+  "brace-frame":   { label: "Braced frame panel",       w: 3.6576, d: 0.3048, h: 4.0,    color: "#77828f", sys: "structure" },
+  "stair-run":     { label: "Steel stair run",           w: 3.6576, d: 1.2192, h: 3.6576, color: "#6e7a87", sys: "structure" },
+
+  /* -------- Power / electrical -------- */
+  "transformer-dry": { label: "Dry-type transformer",     w: 1.2192, d: 1.2192, h: 1.5240, color: "#e4b34a", sys: "power" },
+  "transformer-pad": { label: "Pad-mount transformer",    w: 1.9812, d: 1.6764, h: 1.8288, color: "#d9a83e", sys: "power" },
+  "generator":       { label: "Diesel generator (enclosed)", w: 4.8768, d: 1.8288, h: 2.4384, color: "#c79a38", sys: "power" },
+  "ats":             { label: "Automatic transfer switch", w: 0.9144, d: 0.6096, h: 2.1336, color: "#e0b654", sys: "power" },
+  "msb":             { label: "Main switchboard",          w: 2.4384, d: 0.7620, h: 2.2860, color: "#e4b34a", sys: "power" },
+  "busway":          { label: "Busway run",                w: 6.0960, d: 0.3048, h: 0.3048, color: "#caa244", sys: "power", elev: 3.1 },
+  "bess":            { label: "Battery cabinet (BESS)",    w: 1.6764, d: 1.2192, h: 2.1336, color: "#d6ad48", sys: "power" },
+  "ev-charger":      { label: "EV charger pedestal",       w: 0.3556, d: 0.3048, h: 1.4224, color: "#e8c164", sys: "power" },
+  "idf":             { label: "IDF / network cabinet",     w: 0.6096, d: 1.0668, h: 2.1336, color: "#d9b458", sys: "power" },
+
+  /* -------- Mechanical / HVAC -------- */
+  "rtu":          { label: "Packaged rooftop unit",   w: 5.4864, d: 2.2860, h: 1.8288, color: "#5ad7d2", sys: "mep" },
+  "ahu":          { label: "Air handling unit (AHU)", w: 3.6576, d: 2.1336, h: 2.2860, color: "#4fc8c2", sys: "mep" },
+  "vav":          { label: "VAV terminal box",        w: 0.9144, d: 0.7620, h: 0.4572, color: "#6cd2cd", sys: "mep", elev: 3.0 },
+  "fcu":          { label: "Fan coil unit",           w: 1.2192, d: 0.6096, h: 0.3556, color: "#6cd2cd", sys: "mep", elev: 2.9 },
+  "erv":          { label: "ERV / DOAS unit",         w: 3.0480, d: 1.6764, h: 1.9812, color: "#54c8c3", sys: "mep" },
+  "chiller-air":  { label: "Air-cooled chiller",      w: 6.0960, d: 2.2352, h: 2.4384, color: "#4fc3be", sys: "mep" },
+  "cooling-tower":{ label: "Cooling tower cell",      w: 3.6576, d: 3.6576, h: 3.9624, color: "#59cdc8", sys: "mep" },
+  "boiler":       { label: "Condensing boiler",       w: 1.5240, d: 0.9144, h: 1.8288, color: "#63d0ca", sys: "mep" },
+  "pump-skid":    { label: "HW / CHW pump skid",      w: 1.8288, d: 1.2192, h: 1.3716, color: "#58c9c4", sys: "mep" },
+  "mau":          { label: "Makeup-air unit",         w: 4.2672, d: 1.8288, h: 1.9812, color: "#50c5c0", sys: "mep" },
+  "exhaust-fan":  { label: "Roof exhaust fan",        w: 0.9144, d: 0.9144, h: 0.7620, color: "#6cd2cd", sys: "mep" },
+  "split-cu":     { label: "Condensing unit (split)", w: 1.0160, d: 0.4064, h: 0.8636, color: "#6cd2cd", sys: "mep" },
+  "duct-run":     { label: "Main duct run",           w: 6.0960, d: 0.6096, h: 0.4064, color: "#79d8d3", sys: "mep", elev: 3.05 },
+
+  /* -------- Utility / plumbing / fire -------- */
+  "fire-pump":  { label: "Fire pump skid",            w: 2.4384, d: 1.5240, h: 1.8288, color: "#c0c8d0", sys: "utility" },
+  "fire-riser": { label: "Sprinkler riser assembly",  w: 0.6096, d: 0.6096, h: 3.0480, color: "#c9d0d8", sys: "utility" },
+  "backflow":   { label: "Backflow preventer (RPZ)",  w: 1.2192, d: 0.4572, h: 0.9144, color: "#b4bcc4", sys: "utility" },
+  "booster":    { label: "Domestic booster skid",     w: 1.5240, d: 1.0668, h: 1.8288, color: "#bcc4cc", sys: "utility" },
+  "compressor": { label: "Air compressor (80 gal)",   w: 1.5240, d: 0.7620, h: 1.6764, color: "#c0c8d0", sys: "utility" },
+  "grease-int": { label: "Grease interceptor",        w: 1.5240, d: 0.9144, h: 0.9144, color: "#aab2ba", sys: "utility" },
+  "ro-skid":    { label: "RO / process water skid",   w: 2.4384, d: 1.2192, h: 1.9812, color: "#c4ccd4", sys: "utility" },
+  "sump":       { label: "Sump / lift station",       w: 0.9144, d: 0.9144, h: 0.6096, color: "#a6aeb6", sys: "utility" },
+
+  /* -------- Buildout fixtures by property type -------- */
+  "desk-pod":         { label: "Workstation pod (6-pack)", w: 4.2672, d: 2.4384, h: 1.2192, color: "#a97142", sys: "buildout" },
+  "conf-table":       { label: "Boardroom table",          w: 4.2672, d: 1.5240, h: 0.7620, color: "#8a5f38", sys: "buildout" },
+  "gondola":          { label: "Retail gondola run",       w: 3.6576, d: 1.2192, h: 1.5240, color: "#b08050", sys: "buildout" },
+  "checkout-counter": { label: "Cash-wrap counter",        w: 2.4384, d: 0.9144, h: 1.0668, color: "#c9b46e", sys: "buildout" },
+  "kitchen-line":     { label: "Commercial kitchen line",  w: 4.8768, d: 1.2192, h: 1.8288, color: "#9aa5ad", sys: "buildout" },
+  "walk-in":          { label: "Walk-in cooler box",       w: 3.0480, d: 2.4384, h: 2.2860, color: "#8f9ba6", sys: "buildout" },
+  "lockers":          { label: "Locker bank",              w: 3.0480, d: 0.4572, h: 1.8288, color: "#7d8896", sys: "buildout" },
+  "shelving":         { label: "Metal shelving run",       w: 2.4384, d: 0.6096, h: 2.1336, color: "#98a2ac", sys: "buildout" },
+  "dock-leveler":     { label: "Dock leveler + bumpers",   w: 2.1336, d: 2.4384, h: 0.6096, color: "#6e7a87", sys: "buildout" },
+  "wd-stack":         { label: "Washer / dryer stack",     w: 0.6858, d: 0.8128, h: 1.9812, color: "#c4ccd4", sys: "buildout" },
+  "unit-kitchen":     { label: "Unit kitchen run",         w: 3.6576, d: 0.6604, h: 0.9144, color: "#b39b6e", sys: "buildout" },
+
   /* High-level buildout SPACES — generic, unbranded room-scale zones that
      show what a buildout would look like. Rendered as translucent volumes
      with a floor pad and name tag; always classified as buildout. */
@@ -75,6 +132,16 @@ export const INTERIOR_TYPES = {
 };
 
 export function floorBase(b, floor) { return (floor - 1) * b.floorH; }
+/* Effective mount height for an interior item. elev >= floorH is an
+   explicit roof/deck mount and is honored as-is; anything else is
+   clamped so ceiling-hung gear stays visible under the doll-house cut
+   (0.9·floorH) on short-floor buildings. */
+export function mountElev(b, it) {
+  const e = it.elev || 0;
+  if (!e) return 0;
+  if (e >= b.floorH) return e;
+  return Math.min(e, Math.max(0, b.floorH * 0.9 - it.h - 0.2));
+}
 export function interiorOnFloor(b, floor) {
   return (b.interior || []).filter(it => it.floor === floor);
 }
@@ -83,15 +150,17 @@ export function interiorOnFloor(b, floor) {
    Every interior element belongs to one system group; used by the
    Interior tab for show/hide and the red systems-overlay view. */
 export const SYS_GROUPS = {
-  power:    { label: "Power",    color: "#e4b34a" },
-  mep:      { label: "MEP",      color: "#5ad7d2" },
-  utility:  { label: "Utility",  color: "#c0c8d0" },
-  buildout: { label: "Buildout", color: "#9a8cff" },
+  structure: { label: "Structure", color: "#aab4bf" },
+  power:     { label: "Power",     color: "#e4b34a" },
+  mep:       { label: "MEP",       color: "#5ad7d2" },
+  utility:   { label: "Utility",   color: "#c0c8d0" },
+  buildout:  { label: "Buildout",  color: "#9a8cff" },
 };
 const SYS_KEYWORDS = [
-  ["power", /transformer|switchgear|switchboard|\bups\b|\bpdu\b|generator|genset|panel|busway|\bats\b|battery|bess|solar|\bpv\b|inverter|\bev\b|charg|meter|electrical|substation|\brpp\b/],
-  ["mep", /crac|crah|\brtu\b|rooftop unit|chiller|\bahu\b|air handler|boiler|\bvrf\b|\bvrv\b|cooling|cool|condens|fan|hvac|\bmau\b|\bdoas\b|duct|exhaust|split system|heat pump|dry cooler|in-row|inrow|rear-door/],
-  ["utility", /water heater|booster|backflow|fire pump|riser|sprinkler|grease|interceptor|gas |compress|air compressor|\bro\b|process water|pump|tank|compactor/],
+  ["structure", /(?<!rack\s)column|\bbeam\b|girder|joist|truss|brace|bracing|shear wall|footing|caisson|purlin|\bstair\b|lintel|precast panel|structural/],
+  ["power", /transformer|switchgear|switchboard|\bups\b|\bpdu\b|generator|genset|panel|busway|\bats\b|battery|bess|solar|\bpv\b|inverter|\bev\b|charg|meter|electrical|substation|\brpp\b|\bidf\b|\bmdf\b/],
+  ["mep", /crac|crah|\brtu\b|rooftop unit|chiller|\bahu\b|air handler|boiler|\bvrf\b|\bvrv\b|cooling|cool|condens|fan|hvac|\bmau\b|\bdoas\b|\berv\b|\bvav\b|duct|exhaust|split system|heat pump|dry cooler|in-row|inrow|rear-door/],
+  ["utility", /water heater|booster|backflow|fire pump|riser|sprinkler|grease|interceptor|gas |compress|air compressor|\bro\b|process water|pump|tank|compactor|sump/],
 ];
 export function classifySys(text) {
   const t = (text || "").toLowerCase();
@@ -200,6 +269,7 @@ export function makeBuilding(partial = {}) {
     parapet: partial.parapet ?? 0.9144,                        // 3 ft
     roof: { type: "flat", pitch: 4, ridge: "x", ...(partial.roof || {}) },
     material: partial.material || "concrete",
+    shell: partial.shell ? JSON.parse(JSON.stringify(partial.shell)) : null, // facade articulation (bands/canopy/fins/…)
     openings: [],
     interior: [],
   };
@@ -226,6 +296,7 @@ export function addInterior(b, spec) {
   } else {
     it.x = spec.x ?? 0; it.z = spec.z ?? 0; it.rot = spec.rot || 0;
     it.w = spec.w || 1; it.d = spec.d || 1; it.h = spec.h || 1;
+    it.elev = Number.isFinite(spec.elev) && spec.elev > 0 ? spec.elev : 0; // mount height above the floor (ceiling-hung gear)
     it.type = spec.type || "";
     it.brand = spec.brand || "";
     // explicit only — a catalog item whose type happens to match a space key
@@ -302,6 +373,7 @@ export function validBuilding(b) {
     Number.isFinite(o.u) && Number.isFinite(o.sill) &&
     Number.isFinite(o.w) && o.w > 0 && Number.isFinite(o.h) && o.h > 0);
   const CLR = /^#[0-9a-fA-F]{3,8}$/;
+  if (b.shell !== undefined && (b.shell === null || typeof b.shell !== "object" || Array.isArray(b.shell))) b.shell = null;
   b.interior = (Array.isArray(b.interior) ? b.interior : []).filter(it => {
     if (!it || !Number.isFinite(it.floor) || it.floor < 1) return false;
     if (typeof it.color !== "string" || !CLR.test(it.color)) it.color = "#8fa3b8";
@@ -314,6 +386,7 @@ export function validBuilding(b) {
     }
     it.kind = "item";
     if (!Number.isFinite(it.rot)) it.rot = 0;
+    if (!Number.isFinite(it.elev) || it.elev < 0) it.elev = 0;
     it.space = it.space === true;
     if (it.space) it.sys = "buildout";
     else if (!SYS_GROUPS[it.sys]) it.sys = classifySys(`${it.type} ${it.name}`);

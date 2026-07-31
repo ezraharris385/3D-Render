@@ -14,7 +14,7 @@ import {
   exportProject, loadProject, loadSaved, save, flushSave,
 } from "./state.js";
 import { buildBuilding, buildDims, disposeGroup } from "./builder.js";
-import { TEMPLATES } from "./templates.js";
+import { TEMPLATES, SIGNATURE } from "./templates.js";
 import * as bridge from "../../js/bridge.js";
 
 const $ = id => document.getElementById(id);
@@ -538,6 +538,8 @@ function presetOptionsFor(assetValue) {
   const out = [];
   const builtin = TEMPLATES[assetValue];
   if (builtin) out.push({ value: "std", label: `${builtin.icon} Standard ${builtin.label} template` });
+  (SIGNATURE[assetValue] || []).forEach((s, i) =>
+    out.push({ value: "sig:" + i, label: `${s.icon || "⭐"} ${s.label}` }));
   bridge.getCatalog().forEach((row, i) => {
     if (row.kind !== "preset") return;
     if (assetForPresetRow(row) !== assetValue) return;
@@ -580,6 +582,11 @@ function wireTemplatePicker() {
     if (choice === "std") {
       const t = TEMPLATES[asset];
       if (t) startBuilding(t.make());
+      return;
+    }
+    if (choice.startsWith("sig:")) {
+      const s = (SIGNATURE[asset] || [])[parseInt(choice.slice(4), 10)];
+      if (s) startBuilding(s.make());
       return;
     }
     if (choice.startsWith("cat:")) {

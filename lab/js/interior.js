@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
   state, FT, INTERIOR_TYPES, SYS_GROUPS, classifySys,
-  selectedBuilding, addInterior, floorBase, interiorOnFloor,
+  selectedBuilding, addInterior, floorBase, interiorOnFloor, mountElev,
   toUI, fromUI, unitSuffix, fmtLen, save, loadProject,
 } from "./state.js";
 import { buildBuilding, buildInteriorOnly, disposeGroup } from "./builder.js";
@@ -37,7 +37,7 @@ let mode = "idle";                     // 'idle' | 'place' | 'wall'
 let placeSpec = null;
 let wallFirst = null;
 let selectedId = null;                 // interior element id
-const sysVisible = { power: true, utility: true, mep: true, buildout: true };
+const sysVisible = { structure: true, power: true, utility: true, mep: true, buildout: true };
 let redMode = false;
 let lastBuildingId = null;             // detect shell swaps across tab switches
 let loopFn = null;
@@ -162,7 +162,7 @@ function rebuildInterior() {
     const orphan = it.floor > b.stories; // shell shrank under this item
     o.visible = !orphan && sysVisible[sys] !== false;
     if (redMode && o.geometry) {
-      if (sys === "buildout") {
+      if (sys === "buildout" || sys === "structure") {
         o.material = new THREE.MeshStandardMaterial({
           color: 0x6b7280, transparent: true, opacity: 0.18, roughness: 0.9, depthWrite: false,
         });
@@ -254,7 +254,8 @@ function pickInterior() {
     if (o.visible === false) continue;       // hidden system / orphan floor
     const it = (b?.interior || []).find(i => i.id === o.userData.interiorId);
     // room-scale zones and red-mode ghosts yield to solid items behind/inside them
-    const yields = it?.space === true || (redMode && (it?.sys || "buildout") === "buildout");
+    const ghostSys = (it?.sys || "buildout") === "buildout" || it?.sys === "structure";
+    const yields = it?.space === true || (redMode && ghostSys);
     if (yields) {
       if (ghostFallback === null) ghostFallback = o.userData.interiorId;
       continue;
@@ -312,7 +313,10 @@ function onPointerDown(e) {
     if (it && it.kind === "item") {
       activeFloor = Math.min(it.floor, b.stories);
       applyClip();
-      const planeY = floorBase(b, it.floor) + 0.13;
+      // the drag plane must sit at the item's MOUNT height, not the floor —
+      // otherwise ceiling-hung gear is undraggable (upward ray misses the
+      // floor plane) or slews wildly (grazing ray hits it far away)
+      const planeY = floorBase(b, it.floor) + 0.13 + mountElev(b, it);
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
       const p = new THREE.Vector3();
       if (raycaster.ray.intersectPlane(plane, p)) {
@@ -355,7 +359,7 @@ function onPointerMove(e) {
   it.x = Math.round((l.x + dragging.offX) / snap) * snap;
   it.z = Math.round((l.z + dragging.offZ) / snap) * snap;
   dragging.moved = true;
-  if (dragging.meshRef) dragging.meshRef.position.set(it.x, floorBase(b, it.floor) + 0.13 + it.h / 2, it.z);
+  if (dragging.meshRef) dragging.meshRef.position.set(it.x, floorBase(b, it.floor) + 0.13 + mountElev(b, it) + it.h / 2, it.z);
   if (helperBox) helperBox.update();
 }
 function onPointerUp(e) {
@@ -404,6 +408,7 @@ window.addEventListener("keydown", e => {
 
 /* ---------------- panels ---------------- */
 const PALETTE_GROUPS = [
+  { key: "structure", label: SYS_GROUPS.structure.label },
   { key: "power",    label: SYS_GROUPS.power.label },
   { key: "mep",      label: SYS_GROUPS.mep.label },
   { key: "utility",  label: SYS_GROUPS.utility.label },
@@ -414,8 +419,9 @@ function paletteEntries() {
   const out = Object.entries(INTERIOR_TYPES).map(([key, t]) => ({
     value: "std:" + key,
     label: t.label,
-    group: t.space ? "space" : classifySys(`${key} ${t.label}`),
+    group: t.space ? "space" : (t.sys || classifySys(`${key} ${t.label}`)),
     spec: { name: t.label, type: key, w: t.w, d: t.d, h: t.h, color: t.color,
+            sys: t.sys, elev: t.elev,
             ...(t.space ? { space: true, sys: "buildout" } : {}) },
   }));
   bridge.getCatalog().forEach((row, i) => {
@@ -517,6 +523,7 @@ function renderList() {
       el.addEventListener("click", ev => {
         if (ev.target.classList.contains("b-del")) return;
         selectedId = it.id;
+        revealIfClipped(it);
         rebuildHelperOnly();
         renderPanels();
         renderEditor();
@@ -537,6 +544,20 @@ function renderList() {
     list.appendChild(note);
   }
   renderEditor();
+}
+
+/* selecting roof-mounted gear from the list while the doll-house cut hides
+   it would show no highlight at all — drop the cut so the pick is visible */
+function revealIfClipped(it) {
+  const b = bld();
+  if (!b || !insideView || it.kind !== "item") return;
+  const base = floorBase(b, it.floor) + 0.13 + mountElev(b, it);
+  const cut = floorBase(b, activeFloor) + b.floorH * 0.9;
+  if (base > cut) {
+    insideView = false;
+    applyClip();
+    shell.toast("Mounted above the cutaway — Inside view switched off so you can see it");
+  }
 }
 
 const setVal = (id, v) => {
